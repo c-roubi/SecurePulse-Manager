@@ -1,0 +1,10 @@
+/home/user/secure-remote-admin/agent/target/debug/deps/agent-55109c925f9f78a4.d: src/main.rs src/config.rs src/communicator.rs src/executor.rs src/recon.rs src/crypto.rs
+
+/home/user/secure-remote-admin/agent/target/debug/deps/agent-55109c925f9f78a4: src/main.rs src/config.rs src/communicator.rs src/executor.rs src/recon.rs src/crypto.rs
+
+src/main.rs:
+src/config.rs:
+src/communicator.rs:
+src/executor.rs:
+src/recon.rs:
+src/crypto.rs:

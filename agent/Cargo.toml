@@ -1,0 +1,80 @@
+[package]
+name = "secure-agent"
+version = "0.1.0"
+edition = "2021"
+authors = ["Security Team"]
+description = "Secure remote administration agent (Rust-based)"
+rust-version = "1.70"
+
+[[bin]]
+name = "agent"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full"] }
+
+# TLS/Encryption
+rustls = "0.21"
+rustls-native-certs = "0.6"
+
+# WebSocket
+tungstenite = "0.20"
+tokio-tungstenite = "0.21"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Encoding/Decoding
+base64 = "0.21"
+base32 = "0.4"
+hex = "0.4"
+
+# Network protocols
+pnet = "0.34"
+trust-dns-resolver = "0.23"
+
+# Cryptography
+aes-gcm = "0.10"
+hmac = "0.12"
+sha2 = "0.10"
+sha1 = "0.10"
+md5 = "0.7"
+rand = "0.8"
+
+# System utilities
+clap = { version = "4.4", features = ["derive"] }
+chrono = "0.4"
+uuid = { version = "1.6", features = ["v4", "serde"] }
+gethostname = "0.4"
+dirs = "5.0"
+
+# Logging
+log = "0.4"
+env_logger = "0.11"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# System information
+sysinfo = "0.29"
+whoami = "1.4"
+
+[dev-dependencies]
+tokio-test = "0.4"
+mockall = "0.12"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[profile.dev]
+opt-level = 0
+
+[profile.test]
+opt-level = 1
