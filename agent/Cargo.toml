@@ -37,11 +37,15 @@ trust-dns-resolver = "0.23"
 
 # Cryptography
 aes-gcm = "0.10"
+chacha20poly1305 = "0.10"
 hmac = "0.12"
+hkdf = "0.12"
 sha2 = "0.10"
 sha1 = "0.10"
 md5 = "0.7"
 rand = "0.8"
+x25519-dalek = { version = "2.0", features = ["static_secrets"] }
+blake3 = "1.5"
 
 # System utilities
 clap = { version = "4.4", features = ["derive"] }

