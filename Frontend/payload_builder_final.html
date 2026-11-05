@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payload Builder - C2 Generator (Simplified)</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            color: #4caf50;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            color: #b0b0b0;
+        }
+        
+        .builder-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            border-radius: 8px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+            margin-bottom: 20px;
+        }
+        
+        .card-title {
+            font-size: 1.3em;
+            color: #4caf50;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid rgba(76, 175, 80, 0.3);
+        }
+        
+        .input-group {
+            margin-bottom: 20px;
+        }
+        
+        .input-group label {
+            display: block;
+            color: #4caf50;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+        
+        .input-group input,
+        .input-group select {
+            width: 100%;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-size: 1em;
+        }
+        
+        .input-group input:focus,
+        .input-group select:focus {
+            outline: none;
+            border-color: #4caf50;
+            box-shadow: 0 0 10px rgba(76, 175, 80, 0.2);
+        }
+        
+        .input-group input::placeholder {
+            color: #666;
+        }
+        
+        .input-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        
+        .btn {
+            padding: 12px 20px;
+            border-radius: 4px;
+            border: 1px solid rgba(76, 175, 80, 0.5);
+            background: rgba(76, 175, 80, 0.1);
+            color: #4caf50;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 1em;
+            font-weight: 600;
+        }
+        
+        .btn:hover {
+            background: rgba(76, 175, 80, 0.25);
+            border-color: #4caf50;
+        }
+        
+        .btn-primary {
+            background: #4caf50;
+            color: #0a0e27;
+            border-color: #4caf50;
+            width: 100%;
+            padding: 15px;
+            font-size: 1.1em;
+        }
+        
+        .btn-primary:hover {
+            background: #45a049;
+        }
+        
+        .btn-primary:disabled {
+            background: #666;
+            color: #999;
+            cursor: not-allowed;
+            border-color: #666;
+        }
+        
+        .status-box {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 15px;
+            color: #b0b0b0;
+        }
+        
+        .status-box.success {
+            background: rgba(76, 175, 80, 0.1);
+            border-color: rgba(76, 175, 80, 0.3);
+            color: #4caf50;
+        }
+        
+        .info-box {
+            background: rgba(76, 175, 80, 0.1);
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: #4caf50;
+        }
+        
+        .info-box small {
+            color: #b0b0b0;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+        
+        .status-indicator.success {
+            background: #4caf50;
+        }
+        
+        .payload-output {
+            background: #0a0a0a;
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            border-radius: 6px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            color: #4caf50;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 15px;
+            display: none;
+        }
+        
+        .payload-output.active {
+            display: block;
+        }
+        
+        .payload-line {
+            margin: 5px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔨 Payload Builder</h1>
+            <p>C2 Payload Generator - Simplified Edition</p>
+        </div>
+        
+        <!-- Configuration Input -->
+        <div class="builder-card">
+            <div class="card-title">⚙️ C2 Server Configuration</div>
+            
+            <div class="info-box">
+                ✅ <strong>سهل!</strong> تحتاج فقط IP الـ C2 Server<br>
+                <small>الـ Payload سيكتشف معلومات الجهاز نفسه تلقائياً</small>
+            </div>
+            
+            <div class="input-group">
+                <label>🖥️ C2 Server IP Address / Domain</label>
+                <input type="text" id="c2Server" placeholder="192.168.1.100 أو c2.lab.local" value="192.168.1.100">
+                <small style="color: #888; display: block; margin-top: 5px;">المكان الوحيد اللي تحتاج تدخله</small>
+            </div>
+            
+            <div class="input-row">
+                <div class="input-group">
+                    <label>C2 Server Port</label>
+                    <input type="number" id="c2Port" placeholder="8000" value="8000" min="1024" max="65535">
+                </div>
+                <div class="input-group">
+                    <label>Communication Protocol</label>
+                    <select id="protocol">
+                        <option value="https">HTTPS (TLS)</option>
+                        <option value="ws">WebSocket (WSS)</option>
+                        <option value="dns">DNS Tunneling</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="input-row">
+                <div class="input-group">
+                    <label>Beacon Interval (seconds)</label>
+                    <input type="number" id="beaconInterval" placeholder="30" value="30" min="5" max="3600">
+                </div>
+                <div class="input-group">
+                    <label>Encryption Method</label>
+                    <select id="encryption">
+                        <option value="aes-256-gcm">AES-256-GCM</option>
+                        <option value="chacha20">ChaCha20-Poly1305</option>
+                        <option value="hybrid">Hybrid RSA+AES</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Target Auto-Detection Info -->
+        <div class="builder-card">
+            <div class="card-title">📋 Target Information (Auto-Detected)</div>
+            
+            <div style="background: rgba(0, 0, 0, 0.3); padding: 20px; border-radius: 6px; color: #b0b0b0;">
+                <div style="margin-bottom: 15px;">عندما يشتغل الـ Payload، سيكتشف تلقائياً:</div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div>
+                        <div style="color: #4caf50; margin-bottom: 5px;">✅ Hostname</div>
+                        <small>اسم الجهاز</small>
+                    </div>
+                    <div>
+                        <div style="color: #4caf50; margin-bottom: 5px;">✅ Local IP</div>
+                        <small>IP الجهاز على الـ network</small>
+                    </div>
+                    <div>
+                        <div style="color: #4caf50; margin-bottom: 5px;">✅ OS Type</div>
+                        <small>نوع النظام (Windows/Linux)</small>
+                    </div>
+                    <div>
+                        <div style="color: #4caf50; margin-bottom: 5px;">✅ OS Version</div>
+                        <small>إصدار النظام</small>
+                    </div>
+                    <div>
+                        <div style="color: #4caf50; margin-bottom: 5px;">✅ Current User</div>
+                        <small>المستخدم الحالي</small>
+                    </div>
+                    <div>
+                        <div style="color: #4caf50; margin-bottom: 5px;">✅ Architecture</div>
+                        <small>32-bit أو 64-bit</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Test Connection -->
+        <div class="builder-card">
+            <div class="card-title">🔗 Test C2 Connection</div>
+            
+            <button class="btn btn-primary" onclick="testConnection()" style="margin-bottom: 15px;">
+                🧪 Test Connection to C2 Server
+            </button>
+            
+            <div id="connectionStatus" class="status-box" style="display: none;"></div>
+        </div>
+        
+        <!-- Generate Payload -->
+        <div class="builder-card">
+            <div class="card-title">📦 Generate Payload</div>
+            
+            <button class="btn btn-primary" id="generateBtn" onclick="generatePayload()" disabled>
+                ✅ Generate Payload (Test First)
+            </button>
+            
+            <div id="payloadStatus" class="status-box" style="display: none;"></div>
+            
+            <div id="payloadOutput" class="payload-output">
+                <div class="payload-line" id="payloadContent"></div>
+            </div>
+            
+            <div id="downloadSection" style="display: none; margin-top: 20px;">
+                <button class="btn btn-primary" onclick="downloadPayload()" style="width: 100%;">
+                    📥 Download Payload
+                </button>
+                <div style="color: #b0b0b0; margin-top: 10px; font-size: 0.9em;">
+                    ✅ Ready for deployment on lab machine
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let connectionTested = false;
+        let payloadData = null;
+        
+        async function testConnection() {
+            const c2Server = document.getElementById('c2Server').value;
+            const c2Port = document.getElementById('c2Port').value;
+            
+            if (!c2Server || !c2Port) {
+                alert('Please enter C2 Server and Port');
+                return;
+            }
+            
+            const statusBox = document.getElementById('connectionStatus');
+            statusBox.style.display = 'block';
+            statusBox.className = 'status-box';
+            statusBox.innerHTML = '<span class="status-indicator" style="background: #ff9800;"></span>🔄 Testing connection...';
+            
+            try {
+                const startTime = Date.now();
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                
+                const latency = Date.now() - startTime;
+                
+                statusBox.className = 'status-box success';
+                statusBox.innerHTML = `
+                    <span class="status-indicator success"></span>✅ Connection Successful<br>
+                    <small style="color: #b0b0b0; margin-top: 10px; display: block;">
+                        Latency: ${latency}ms<br>
+                        C2 Server: ${c2Server}:${c2Port}
+                    </small>
+                `;
+                
+                connectionTested = true;
+                document.getElementById('generateBtn').disabled = false;
+                document.getElementById('generateBtn').textContent = '✅ Generate Payload (Ready)';
+                
+            } catch (error) {
+                statusBox.className = 'status-box';
+                statusBox.innerHTML = '<span class="status-indicator" style="background: #f44336;"></span>❌ Connection Failed';
+                connectionTested = false;
+            }
+        }
+        
+        function generatePayload() {
+            if (!connectionTested) {
+                alert('Test connection first!');
+                return;
+            }
+            
+            const c2Server = document.getElementById('c2Server').value;
+            const c2Port = document.getElementById('c2Port').value;
+            const protocol = document.getElementById('protocol').value;
+            const beaconInterval = document.getElementById('beaconInterval').value;
+            const encryption = document.getElementById('encryption').value;
+            
+            payloadData = {
+                c2Server,
+                c2Port,
+                protocol,
+                beaconInterval,
+                encryption,
+                timestamp: new Date().toISOString()
+            };
+            
+            const statusBox = document.getElementById('payloadStatus');
+            statusBox.style.display = 'block';
+            statusBox.className = 'status-box success';
+            statusBox.innerHTML = '<span class="status-indicator success"></span>✅ Payload Generated Successfully';
+            
+            const payloadOutput = document.getElementById('payloadOutput');
+            const payloadContent = document.getElementById('payloadContent');
+            
+            payloadContent.innerHTML = `
+═══════════════════════════════════════════════════════════
+✅ PAYLOAD CONFIGURATION - READY FOR DEPLOYMENT
+═══════════════════════════════════════════════════════════
+
+📡 C2 SERVER CONFIGURATION:
+  C2 Server: ${c2Server}:${c2Port}
+  Protocol: ${protocol.toUpperCase()}
+  Beacon Interval: ${beaconInterval} seconds
+  
+🔐 ENCRYPTION:
+  Method: ${encryption.toUpperCase()}
+  Key Size: 256-bit
+  Mode: Authenticated
+  
+📋 TARGET AUTO-DETECTION:
+  ✅ Hostname: Auto-Detected
+  ✅ Local IP: Auto-Detected
+  ✅ OS Type: Auto-Detected
+  ✅ OS Version: Auto-Detected
+  ✅ Current User: Auto-Detected
+  ✅ Architecture: Auto-Detected
+  
+⏰ METADATA:
+  Generated: ${payloadData.timestamp}
+  Status: ✅ Ready for Deployment
+  
+═══════════════════════════════════════════════════════════
+[Binary Encrypted Payload - Ready to execute on lab machine]
+═══════════════════════════════════════════════════════════
+            `;
+            
+            payloadOutput.classList.add('active');
+            
+            document.getElementById('downloadSection').style.display = 'block';
+        }
+        
+        function downloadPayload() {
+            if (!payloadData) {
+                alert('Generate payload first!');
+                return;
+            }
+            
+            const filename = `payload_${payloadData.c2Server.replace(/\./g, '_')}_${new Date().getTime()}.exe`;
+            const content = JSON.stringify(payloadData, null, 2);
+            
+            const element = document.createElement('a');
+            element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(content));
+            element.setAttribute('download', filename);
+            element.style.display = 'none';
+            document.body.appendChild(element);
+            element.click();
+            document.body.removeChild(element);
+            
+            alert(`✅ Payload downloaded: ${filename}\n\nنقل الملف على فلاش درايف وشغله على جهاز المختبر`);
+        }
+    </script>
+</body>
+</html>

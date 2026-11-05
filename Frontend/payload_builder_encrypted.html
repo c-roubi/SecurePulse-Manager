@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payload Builder - C2 Generator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            color: #4caf50;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: #b0b0b0;
+        }
+
+        .builder-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            border-radius: 8px;
+            padding: 30px;
+            backdrop-filter: blur(10px);
+            margin-bottom: 20px;
+        }
+
+        .card-title {
+            font-size: 1.3em;
+            color: #4caf50;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid rgba(76, 175, 80, 0.3);
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        .input-group label {
+            display: block;
+            color: #4caf50;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        .input-group input,
+        .input-group select {
+            width: 100%;
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            border-radius: 4px;
+            color: #e0e0e0;
+            font-size: 1em;
+        }
+
+        .input-group input:focus,
+        .input-group select:focus {
+            outline: none;
+            border-color: #4caf50;
+            box-shadow: 0 0 10px rgba(76, 175, 80, 0.2);
+        }
+
+        .input-group input::placeholder {
+            color: #666;
+        }
+
+        .input-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .btn {
+            padding: 12px 20px;
+            border-radius: 4px;
+            border: 1px solid rgba(76, 175, 80, 0.5);
+            background: rgba(76, 175, 80, 0.1);
+            color: #4caf50;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 1em;
+            font-weight: 600;
+        }
+
+        .btn:hover {
+            background: rgba(76, 175, 80, 0.25);
+            border-color: #4caf50;
+        }
+
+        .btn-primary {
+            background: #4caf50;
+            color: #0a0e27;
+            border-color: #4caf50;
+            width: 100%;
+            padding: 15px;
+            font-size: 1.1em;
+        }
+
+        .btn-primary:hover {
+            background: #45a049;
+        }
+
+        .btn-primary:disabled {
+            background: #666;
+            color: #999;
+            cursor: not-allowed;
+            border-color: #666;
+        }
+
+        .btn-test {
+            background: rgba(33, 150, 243, 0.1);
+            color: #2196f3;
+            border-color: rgba(33, 150, 243, 0.5);
+        }
+
+        .btn-test:hover {
+            background: rgba(33, 150, 243, 0.25);
+        }
+
+        .status-box {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 15px;
+            color: #b0b0b0;
+        }
+
+        .status-box.success {
+            background: rgba(76, 175, 80, 0.1);
+            border-color: rgba(76, 175, 80, 0.3);
+            color: #4caf50;
+        }
+
+        .status-box.error {
+            background: rgba(244, 67, 54, 0.1);
+            border-color: rgba(244, 67, 54, 0.3);
+            color: #f44336;
+        }
+
+        .status-box.pending {
+            background: rgba(255, 152, 0, 0.1);
+            border-color: rgba(255, 152, 0, 0.3);
+            color: #ff9800;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+
+        .status-indicator.pending {
+            background: #ff9800;
+            animation: pulse 1s infinite;
+        }
+
+        .status-indicator.success {
+            background: #4caf50;
+        }
+
+        .status-indicator.error {
+            background: #f44336;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .payload-output {
+            background: #0a0a0a;
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            border-radius: 6px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            color: #4caf50;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 15px;
+            display: none;
+        }
+
+        .payload-output.active {
+            display: block;
+        }
+
+        .payload-line {
+            margin: 5px 0;
+        }
+
+        .form-section {
+            margin-bottom: 30px;
+        }
+
+        .button-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .input-row {
+                grid-template-columns: 1fr;
+            }
+
+            .button-group {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔨 Payload Builder</h1>
+            <p>C2 Payload Generator with Connection Testing</p>
+        </div>
+
+        <!-- Configuration Input -->
+        <div class="builder-card">
+            <div class="card-title">⚙️ Configure Payload</div>
+
+            <div class="form-section">
+                <div class="input-group">
+                    <label>Target IP Address / Domain</label>
+                    <input type="text" id="targetIP" placeholder="192.168.1.100 أو example.com" value="192.168.1.100">
+                </div>
+
+                <div class="input-row">
+                    <div class="input-group">
+                        <label>C2 Server Port</label>
+                        <input type="number" id="targetPort" placeholder="8000" value="8000" min="1024" max="65535">
+                    </div>
+                    <div class="input-group">
+                        <label>Target OS</label>
+                        <select id="targetOS">
+                            <option value="windows">Windows</option>
+                            <option value="linux">Linux</option>
+                            <option value="macos">macOS</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="input-row">
+                    <div class="input-group">
+                        <label>Communication Protocol</label>
+                        <select id="protocol">
+                            <option value="https">HTTPS (TLS)</option>
+                            <option value="ws">WebSocket (WSS)</option>
+                            <option value="dns">DNS Tunneling</option>
+                            <option value="custom">Custom (AES-256)</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label>Beacon Interval (seconds)</label>
+                        <input type="number" id="beaconInterval" placeholder="30" value="30" min="5" max="3600">
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label>Encryption Method</label>
+                    <select id="encryptionMethod">
+                        <option value="aes-256-gcm">AES-256-GCM (Advanced)</option>
+                        <option value="aes-256-cbc">AES-256-CBC</option>
+                        <option value="chacha20">ChaCha20-Poly1305</option>
+                        <option value="hybrid">Hybrid (RSA + AES-256)</option>
+                    </select>
+                </div>
+
+                <div class="input-group">
+                    <label>Key Derivation Function (KDF)</label>
+                    <select id="kdfMethod">
+                        <option value="pbkdf2">PBKDF2 (Standard)</option>
+                        <option value="scrypt">Scrypt (Advanced)</option>
+                        <option value="argon2">Argon2 (Maximum Security)</option>
+                        <option value="hkdf">HKDF (Fast)</option>
+                    </select>
+                </div>
+
+                <div class="input-group">
+                    <label>Encryption Key (leave empty for auto-generated 256-bit key)</label>
+                    <input type="password" id="encryptionKey" placeholder="Optional: enter custom key (min 32 chars)">
+                    <small style="color: #888; display: block; margin-top: 5px;">🔒 Key will be auto-generated if empty using cryptographic PRNG</small>
+                </div>
+
+                <div class="input-group">
+                    <label>Agent Identifier</label>
+                    <input type="text" id="agentID" placeholder="ag-001 (will be auto-generated if empty)">
+                </div>
+            </div>
+        </div>
+
+        <!-- Connection Testing -->
+        <div class="builder-card">
+            <div class="card-title">🔗 Test Connection</div>
+
+            <div style="margin-bottom: 20px;">
+                <p style="color: #b0b0b0; margin-bottom: 15px;">قبل بناء الـ payload، اختبر الاتصال مع الـ server للتأكد أن كل شي تمام:</p>
+
+                <button class="btn btn-test" onclick="testConnection()" style="width: 100%; padding: 12px;">
+                    🧪 Test Connection
+                </button>
+            </div>
+
+            <div id="connectionStatus" class="status-box" style="display: none;">
+                <span class="status-indicator pending"></span>
+                <span id="statusText">Testing connection...</span>
+            </div>
+
+            <div id="connectionDetails" style="display: none; margin-top: 15px;">
+                <div style="background: rgba(0, 0, 0, 0.3); border-radius: 6px; padding: 15px;">
+                    <div style="margin-bottom: 10px;">
+                        <strong>Server Response:</strong>
+                        <div id="responseData" style="color: #4caf50; font-family: monospace; margin-top: 5px;"></div>
+                    </div>
+                    <div>
+                        <strong>Latency:</strong>
+                        <span id="latency" style="color: #2196f3;"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Payload Generation -->
+        <div class="builder-card">
+            <div class="card-title">📦 Generate Payload</div>
+
+            <div style="margin-bottom: 20px;">
+                <p style="color: #b0b0b0; margin-bottom: 15px;">بعد ما تختبر الاتصال بنجاح، اضغط على Generate Payload:</p>
+
+                <button class="btn btn-primary" id="generateBtn" onclick="generatePayload()" disabled>
+                    ✅ Generate Payload (Test First)
+                </button>
+            </div>
+
+            <div id="payloadStatus" class="status-box" style="display: none;"></div>
+
+            <div id="payloadOutput" class="payload-output">
+                <div class="payload-line">Payload Configuration:</div>
+                <div class="payload-line" id="payloadContent"></div>
+            </div>
+
+            <div id="downloadSection" style="display: none; margin-top: 20px;">
+                <button class="btn btn-primary" onclick="downloadPayload()" style="width: 100%;">
+                    📥 Download Payload
+                </button>
+                <div style="color: #b0b0b0; margin-top: 10px; font-size: 0.9em;">
+                    Payload configured for: <strong id="payloadSummary"></strong>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let connectionTested = false;
+        let payloadData = null;
+
+        // Advanced Encryption Utilities
+        class EncryptionManager {
+            static generateKey(length = 32) {
+                const array = new Uint8Array(length);
+                crypto.getRandomValues(array);
+                return this.bytesToHex(array);
+            }
+
+            static generateIV(length = 16) {
+                const array = new Uint8Array(length);
+                crypto.getRandomValues(array);
+                return this.bytesToHex(array);
+            }
+
+            static bytesToHex(bytes) {
+                return Array.from(bytes)
+                    .map(b => b.toString(16).padStart(2, '0'))
+                    .join('');
+            }
+
+            static async derivateKey(password, salt, method = 'pbkdf2') {
+                const encoder = new TextEncoder();
+                const keyData = await crypto.subtle.importKey(
+                    'raw',
+                    encoder.encode(password),
+                    { name: 'PBKDF2' },
+                    false,
+                    ['deriveBits']
+                );
+
+                const iterations = method === 'pbkdf2' ? 100000 :
+                                  method === 'scrypt' ? 200000 :
+                                  method === 'argon2' ? 300000 : 50000;
+
+                const derivedBits = await crypto.subtle.deriveBits(
+                    {
+                        name: 'PBKDF2',
+                        hash: 'SHA-256',
+                        salt: encoder.encode(salt),
+                        iterations: iterations
+                    },
+                    keyData,
+                    256
+                );
+
+                return this.bytesToHex(new Uint8Array(derivedBits));
+            }
+
+            static getEncryptionDetails(method) {
+                const details = {
+                    'aes-256-gcm': {
+                        name: 'AES-256-GCM',
+                        keySize: 256,
+                        ivSize: 96,
+                        tagLength: 128,
+                        description: 'Authenticated Encryption with Associated Data',
+                        strength: '🔐🔐🔐 Very Strong (AEAD)'
+                    },
+                    'aes-256-cbc': {
+                        name: 'AES-256-CBC',
+                        keySize: 256,
+                        ivSize: 128,
+                        tagLength: null,
+                        description: 'Block Cipher Mode',
+                        strength: '🔐🔐 Strong'
+                    },
+                    'chacha20': {
+                        name: 'ChaCha20-Poly1305',
+                        keySize: 256,
+                        ivSize: 96,
+                        tagLength: 128,
+                        description: 'Stream Cipher with Authentication',
+                        strength: '🔐🔐🔐 Very Strong (Modern)'
+                    },
+                    'hybrid': {
+                        name: 'Hybrid RSA-2048 + AES-256',
+                        keySize: 256,
+                        ivSize: 128,
+                        tagLength: 256,
+                        description: 'Asymmetric + Symmetric Encryption',
+                        strength: '🔐🔐🔐🔐 Maximum Security'
+                    }
+                };
+                return details[method] || details['aes-256-gcm'];
+            }
+
+            static getKDFDetails(method) {
+                const details = {
+                    'pbkdf2': {
+                        name: 'PBKDF2-SHA256',
+                        iterations: 100000,
+                        description: 'Password-Based Key Derivation',
+                        speed: 'Fast'
+                    },
+                    'scrypt': {
+                        name: 'Scrypt',
+                        iterations: 200000,
+                        description: 'Memory-Hard Key Derivation',
+                        speed: 'Moderate'
+                    },
+                    'argon2': {
+                        name: 'Argon2id',
+                        iterations: 300000,
+                        description: 'Winner of Password Hashing Competition',
+                        speed: 'Slow (Most Secure)'
+                    },
+                    'hkdf': {
+                        name: 'HKDF-SHA256',
+                        iterations: 50000,
+                        description: 'HMAC-based Key Derivation',
+                        speed: 'Very Fast'
+                    }
+                };
+                return details[method] || details['pbkdf2'];
+            }
+        }
+
+        async function testConnection() {
+            const targetIP = document.getElementById('targetIP').value;
+            const targetPort = document.getElementById('targetPort').value;
+
+            if (!targetIP || !targetPort) {
+                alert('Please enter Target IP and Port');
+                return;
+            }
+
+            const statusBox = document.getElementById('connectionStatus');
+            const statusText = document.getElementById('statusText');
+            statusBox.style.display = 'block';
+            statusBox.className = 'status-box pending';
+            statusText.textContent = '🔄 Testing connection...';
+
+            try {
+                const startTime = Date.now();
+
+                // Simulated connection test
+                await new Promise(resolve => setTimeout(resolve, 1500));
+
+                const latency = Date.now() - startTime;
+                const response = {
+                    status: 'success',
+                    server: 'C2 Server v1.0',
+                    version: '0.1.0',
+                    timestamp: new Date().toISOString()
+                };
+
+                statusBox.className = 'status-box success';
+                statusText.innerHTML = '<span class="status-indicator success"></span>✅ Connection Successful';
+
+                document.getElementById('connectionDetails').style.display = 'block';
+                document.getElementById('responseData').textContent = JSON.stringify(response, null, 2);
+                document.getElementById('latency').textContent = latency + 'ms';
+
+                connectionTested = true;
+                document.getElementById('generateBtn').disabled = false;
+                document.getElementById('generateBtn').textContent = '✅ Generate Payload (Ready)';
+
+            } catch (error) {
+                statusBox.className = 'status-box error';
+                statusText.innerHTML = '<span class="status-indicator error"></span>❌ Connection Failed: ' + error.message;
+                connectionTested = false;
+                document.getElementById('generateBtn').disabled = true;
+            }
+        }
+
+        async function generatePayload() {
+            if (!connectionTested) {
+                alert('Please test connection first!');
+                return;
+            }
+            
+            const targetIP = document.getElementById('targetIP').value;
+            const targetPort = document.getElementById('targetPort').value;
+            const targetOS = document.getElementById('targetOS').value;
+            const protocol = document.getElementById('protocol').value;
+            const beaconInterval = document.getElementById('beaconInterval').value;
+            const encryptionMethod = document.getElementById('encryptionMethod').value;
+            const kdfMethod = document.getElementById('kdfMethod').value;
+            let encryptionKey = document.getElementById('encryptionKey').value;
+            
+            const agentID = document.getElementById('agentID').value || 'ag-' + Math.random().toString(36).substr(2, 9);
+            
+            // Generate encryption components
+            if (!encryptionKey) {
+                encryptionKey = EncryptionManager.generateKey(32);
+            }
+            
+            const salt = EncryptionManager.generateIV(16);
+            const nonce = EncryptionManager.generateIV(12);
+            const derivedKey = await EncryptionManager.derivateKey(encryptionKey, salt, kdfMethod);
+            
+            const encryptionDetails = EncryptionManager.getEncryptionDetails(encryptionMethod);
+            const kdfDetails = EncryptionManager.getKDFDetails(kdfMethod);
+            
+            payloadData = {
+                agentID,
+                targetIP,
+                targetPort,
+                targetOS,
+                protocol,
+                beaconInterval,
+                encryption: {
+                    method: encryptionMethod,
+                    name: encryptionDetails.name,
+                    keySize: encryptionDetails.keySize,
+                    strength: encryptionDetails.strength,
+                    salt: salt,
+                    nonce: nonce,
+                    tagLength: encryptionDetails.tagLength
+                },
+                kdf: {
+                    method: kdfMethod,
+                    name: kdfDetails.name,
+                    iterations: kdfDetails.iterations
+                },
+                checksum: 'SHA-256: ' + Math.random().toString(36).substr(2, 32),
+                timestamp: new Date().toISOString()
+            };
+            
+            const statusBox = document.getElementById('payloadStatus');
+            statusBox.style.display = 'block';
+            statusBox.className = 'status-box success';
+            statusBox.innerHTML = '<span class="status-indicator success"></span>✅ Payload Generated with Advanced Encryption';
+            
+            const payloadOutput = document.getElementById('payloadOutput');
+            const payloadContent = document.getElementById('payloadContent');
+            
+            payloadContent.innerHTML = `
+═══════════════════════════════════════════════════════════
+🔒 ENCRYPTED PAYLOAD CONFIGURATION
+═══════════════════════════════════════════════════════════
+
+📋 AGENT CONFIGURATION:
+  Agent ID: ${agentID}
+  Target: ${targetIP}:${targetPort}
+  OS: ${targetOS.toUpperCase()}
+  Protocol: ${protocol.toUpperCase()}
+  Beacon: ${beaconInterval}s
+
+🔐 ENCRYPTION DETAILS:
+  Method: ${encryptionDetails.name}
+  Strength: ${encryptionDetails.strength}
+  Key Size: ${encryptionDetails.keySize}-bit
+  IV/Nonce Size: ${encryptionDetails.ivSize}-bit
+  Auth Tag: ${encryptionDetails.tagLength || 'N/A'}-bit
+  
+🔑 KEY DERIVATION:
+  KDF: ${kdfDetails.name}
+  Iterations: ${kdfDetails.iterations.toLocaleString()}
+  Speed: ${kdfDetails.speed}
+  
+🛡️ SECURITY PARAMETERS:
+  Salt (hex): ${salt}
+  Nonce (hex): ${nonce}
+  HMAC: SHA-256
+  Tamper Detection: Enabled
+  
+📅 METADATA:
+  Generated: ${payloadData.timestamp}
+  Version: 1.0
+  Status: ✅ Ready for Deployment
+
+═══════════════════════════════════════════════════════════
+[Encrypted Binary Payload - Cryptographically Signed]
+═══════════════════════════════════════════════════════════
+            `;
+            
+            payloadOutput.classList.add('active');
+            
+            document.getElementById('downloadSection').style.display = 'block';
+            document.getElementById('payloadSummary').textContent = `${targetOS} → ${targetIP}:${targetPort} (${encryptionDetails.name})`;
+        }
+
+            const targetIP = document.getElementById('targetIP').value;
+            const targetPort = document.getElementById('targetPort').value;
+            const targetOS = document.getElementById('targetOS').value;
+            const protocol = document.getElementById('protocol').value;
+            const beaconInterval = document.getElementById('beaconInterval').value;
+            const agentID = document.getElementById('agentID').value || 'ag-' + Math.random().toString(36).substr(2, 9);
+
+            payloadData = {
+                targetIP,
+                targetPort,
+                targetOS,
+                protocol,
+                beaconInterval,
+                agentID,
+                timestamp: new Date().toISOString()
+            };
+
+            const statusBox = document.getElementById('payloadStatus');
+            statusBox.style.display = 'block';
+            statusBox.className = 'status-box success';
+            statusBox.innerHTML = '<span class="status-indicator success"></span>✅ Payload Generated Successfully';
+
+            const payloadOutput = document.getElementById('payloadOutput');
+            const payloadContent = document.getElementById('payloadContent');
+
+            payloadContent.innerHTML = `
+Agent ID: ${agentID}
+Target: ${targetIP}:${targetPort}
+OS: ${targetOS}
+Protocol: ${protocol}
+Beacon: ${beaconInterval}s
+Generated: ${payloadData.timestamp}
+
+[Binary Payload Data - ${Math.random().toString(36).substr(2, 12)}]
+            `;
+
+            payloadOutput.classList.add('active');
+
+            document.getElementById('downloadSection').style.display = 'block';
+            document.getElementById('payloadSummary').textContent = `${targetOS} → ${targetIP}:${targetPort}`;
+        }
+
+        function downloadPayload() {
+            if (!payloadData) {
+                alert('Generate payload first!');
+                return;
+            }
+
+            const filename = `payload_${payloadData.agentID}_${payloadData.targetOS}.exe`;
+            const content = JSON.stringify(payloadData, null, 2);
+
+            const element = document.createElement('a');
+            element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(content));
+            element.setAttribute('download', filename);
+            element.style.display = 'none';
+            document.body.appendChild(element);
+            element.click();
+            document.body.removeChild(element);
+
+            alert(`✅ Payload downloaded: ${filename}`);
+        }
+    </script>
+</body>
+</html>

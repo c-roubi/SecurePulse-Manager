@@ -1,0 +1,1082 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pro Control Panel - Advanced Admin Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+
+        .container {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        .sidebar {
+            width: 250px;
+            background: rgba(15, 23, 42, 0.95);
+            border-right: 1px solid rgba(76, 175, 80, 0.2);
+            padding: 20px;
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+            z-index: 100;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 30px;
+            padding: 15px;
+            background: rgba(76, 175, 80, 0.1);
+            border-radius: 8px;
+        }
+
+        .logo-text {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #4caf50;
+        }
+
+        .nav-section {
+            margin-bottom: 30px;
+        }
+
+        .nav-title {
+            font-size: 0.8em;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            padding: 0 10px;
+        }
+
+        .nav-item {
+            padding: 12px 15px;
+            margin: 5px 0;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #b0b0b0;
+        }
+
+        .nav-item:hover {
+            background: rgba(76, 175, 80, 0.15);
+            color: #4caf50;
+        }
+
+        .nav-item.active {
+            background: rgba(76, 175, 80, 0.25);
+            color: #4caf50;
+            border-left: 3px solid #4caf50;
+        }
+
+        .main {
+            margin-left: 250px;
+            flex: 1;
+            padding: 20px;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .header h1 {
+            font-size: 2em;
+            color: #ffffff;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #4caf50, #2196f3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid rgba(76, 175, 80, 0.2);
+            padding-bottom: 10px;
+        }
+
+        .tab-btn {
+            padding: 10px 20px;
+            border: none;
+            background: rgba(76, 175, 80, 0.1);
+            color: #b0b0b0;
+            border-radius: 6px 6px 0 0;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .tab-btn:hover {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4caf50;
+        }
+
+        .tab-btn.active {
+            background: rgba(76, 175, 80, 0.3);
+            color: #4caf50;
+            border-bottom: 2px solid #4caf50;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, rgba(76, 175, 80, 0.1), rgba(33, 150, 243, 0.1));
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            padding: 20px;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+            border-color: #4caf50;
+            box-shadow: 0 10px 30px rgba(76, 175, 80, 0.2);
+        }
+
+        .stat-label {
+            color: #b0b0b0;
+            font-size: 0.9em;
+            margin-bottom: 10px;
+        }
+
+        .stat-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #4caf50;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            margin-bottom: 20px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(76, 175, 80, 0.2);
+        }
+
+        .card-title {
+            font-size: 1.3em;
+            color: #ffffff;
+            font-weight: 600;
+        }
+
+        .btn {
+            padding: 8px 15px;
+            border-radius: 4px;
+            border: 1px solid rgba(76, 175, 80, 0.5);
+            background: rgba(76, 175, 80, 0.1);
+            color: #4caf50;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.85em;
+        }
+
+        .btn:hover {
+            background: rgba(76, 175, 80, 0.25);
+            border-color: #4caf50;
+        }
+
+        .btn-primary {
+            background: #4caf50;
+            color: #0a0e27;
+            border-color: #4caf50;
+        }
+
+        .btn-primary:hover {
+            background: #45a049;
+        }
+
+        /* File Manager Styles */
+        .file-browser {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 20px;
+        }
+
+        .folder-tree {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 15px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .folder-item {
+            padding: 8px 12px;
+            margin: 3px 0;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .folder-item:hover {
+            background: rgba(76, 175, 80, 0.15);
+        }
+
+        .folder-item.active {
+            background: rgba(76, 175, 80, 0.25);
+            color: #4caf50;
+        }
+
+        .file-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 15px;
+        }
+
+        .file-item {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .file-item:hover {
+            border-color: #4caf50;
+            box-shadow: 0 5px 15px rgba(76, 175, 80, 0.2);
+        }
+
+        .file-icon {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+
+        .file-name {
+            color: #b0b0b0;
+            font-size: 0.85em;
+            word-break: break-word;
+        }
+
+        /* Browser Styles */
+        .browser-frame {
+            display: flex;
+            flex-direction: column;
+            height: 600px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .browser-toolbar {
+            display: flex;
+            gap: 10px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.3);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            align-items: center;
+        }
+
+        .url-bar {
+            flex: 1;
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            border-radius: 4px;
+            color: #b0b0b0;
+        }
+
+        .browser-content {
+            flex: 1;
+            overflow: auto;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #666;
+        }
+
+        /* Collager/Image Grid Styles */
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .image-item {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .image-item:hover {
+            transform: scale(1.05);
+            border-color: #4caf50;
+            box-shadow: 0 5px 20px rgba(76, 175, 80, 0.3);
+        }
+
+        .image-placeholder {
+            width: 100%;
+            height: 200px;
+            background: linear-gradient(135deg, rgba(76, 175, 80, 0.1), rgba(33, 150, 243, 0.1));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3em;
+        }
+
+        .image-info {
+            padding: 10px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .image-name {
+            color: #4caf50;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .image-size {
+            color: #888;
+            font-size: 0.85em;
+        }
+
+        /* Terminal Styles */
+        .terminal {
+            background: #0a0a0a;
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            color: #4caf50;
+            min-height: 300px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .terminal-line {
+            margin: 5px 0;
+            line-height: 1.6;
+        }
+
+        .terminal-prompt {
+            color: #4caf50;
+            font-weight: bold;
+        }
+
+        .terminal-output {
+            color: #b0b0b0;
+        }
+
+        /* Live Session Video Styles */
+        .video-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+        }
+
+        .video-container {
+            background: #000;
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .video-player {
+            width: 100%;
+            height: 300px;
+            background: linear-gradient(135deg, rgba(0, 0, 0, 0.8), rgba(76, 175, 80, 0.1));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 4em;
+            color: #4caf50;
+        }
+
+        .video-controls {
+            display: flex;
+            gap: 10px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            border-top: 1px solid rgba(76, 175, 80, 0.2);
+        }
+
+        .video-info {
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.5);
+            border-top: 1px solid rgba(76, 175, 80, 0.2);
+            font-size: 0.9em;
+        }
+
+        .video-title {
+            color: #4caf50;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .video-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            color: #b0b0b0;
+            font-size: 0.85em;
+        }
+
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .live-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background: #f44336;
+            border-radius: 50%;
+            margin-right: 5px;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .sessions-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .session-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .session-card:hover {
+            border-color: #4caf50;
+            box-shadow: 0 5px 15px rgba(76, 175, 80, 0.2);
+        }
+
+        .session-card.active {
+            border-color: #4caf50;
+            background: rgba(76, 175, 80, 0.1);
+        }
+
+        .session-name {
+            color: #4caf50;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .session-details {
+            color: #b0b0b0;
+            font-size: 0.85em;
+            line-height: 1.6;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        th {
+            background: rgba(76, 175, 80, 0.1);
+            color: #4caf50;
+            font-weight: 600;
+        }
+
+        tr:hover {
+            background: rgba(76, 175, 80, 0.05);
+        }
+
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+
+        .status-active {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4caf50;
+        }
+
+        .status-inactive {
+            background: rgba(244, 67, 54, 0.2);
+            color: #f44336;
+        }
+
+        @media (max-width: 768px) {
+            .sidebar {
+                position: relative;
+                width: 100%;
+                height: auto;
+                border-right: none;
+                border-bottom: 1px solid rgba(76, 175, 80, 0.2);
+            }
+
+            .main {
+                margin-left: 0;
+            }
+
+            .file-browser {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <div class="logo">
+                <div style="font-size: 1.5em;">🦀</div>
+                <div class="logo-text">C2 Pro</div>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-title">Dashboard</div>
+                <div class="nav-item active" onclick="switchTab('dashboard')">
+                    <span>📊</span>
+                    <span>Overview</span>
+                </div>
+                <div class="nav-item" onclick="switchTab('agents')">
+                    <span>🖥️</span>
+                    <span>Agents</span>
+                </div>
+                <div class="nav-item" onclick="switchTab('commands')">
+                    <span>⌨️</span>
+                    <span>Commands</span>
+                </div>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-title">Tools</div>
+                <div class="nav-item" onclick="switchTab('filemanager')">
+                    <span>📁</span>
+                    <span>File Manager</span>
+                </div>
+                <div class="nav-item" onclick="switchTab('browser')">
+                    <span>🌐</span>
+                    <span>Browser</span>
+                </div>
+                <div class="nav-item" onclick="switchTab('collager')">
+                    <span>🖼️</span>
+                    <span>Collager</span>
+                </div>
+                <div class="nav-item" onclick="switchTab('terminal')">
+                    <span>💻</span>
+                    <span>Terminal</span>
+                </div>
+                <div class="nav-item" onclick="switchTab('livesession')">
+                    <span>🎥</span>
+                    <span>Live Session</span>
+                </div>
+            </div>
+
+            <div class="nav-section">
+                <div class="nav-title">Security</div>
+                <div class="nav-item" onclick="switchTab('monitoring')">
+                    <span>🔍</span>
+                    <span>Monitoring</span>
+                </div>
+                <div class="nav-item" onclick="switchTab('alerts')">
+                    <span>🚨</span>
+                    <span>Alerts</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="main">
+            <div class="header">
+                <h1>Control Panel Pro</h1>
+                <div class="user-info">
+                    <div style="text-align: right;">
+                        <div style="font-weight: 600;">Admin User</div>
+                        <div style="color: #888; font-size: 0.9em;">Last login: 2 mins ago</div>
+                    </div>
+                    <div class="avatar">A</div>
+                </div>
+            </div>
+
+            <!-- Dashboard Tab -->
+            <div id="dashboard" class="tab-content active">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">Active Agents</div>
+                        <div class="stat-value">12</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Active Sessions</div>
+                        <div class="stat-value">18</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Pending Commands</div>
+                        <div class="stat-value">24</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Critical Alerts</div>
+                        <div class="stat-value">3</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Active Agents</div>
+                        <button class="btn btn-primary">New Agent</button>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Agent ID</th>
+                                <th>Hostname</th>
+                                <th>Status</th>
+                                <th>Last Seen</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>ag-001</strong></td>
+                                <td>DESKTOP-WIN10</td>
+                                <td><span class="status status-active">ACTIVE</span></td>
+                                <td>1 min ago</td>
+                            </tr>
+                            <tr>
+                                <td><strong>ag-002</strong></td>
+                                <td>SERVER-DC01</td>
+                                <td><span class="status status-active">ACTIVE</span></td>
+                                <td>5 mins ago</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- File Manager Tab -->
+            <div id="filemanager" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">📁 File Manager</div>
+                        <div>
+                            <button class="btn">Upload</button>
+                            <button class="btn">New Folder</button>
+                            <button class="btn btn-primary">Download</button>
+                        </div>
+                    </div>
+
+                    <div class="file-browser">
+                        <div class="folder-tree">
+                            <div class="folder-item active">📂 C:\</div>
+                            <div class="folder-item">📂 Users</div>
+                            <div style="padding-left: 20px;">
+                                <div class="folder-item">📂 Admin</div>
+                                <div class="folder-item">📂 Documents</div>
+                                <div class="folder-item">📂 Downloads</div>
+                            </div>
+                            <div class="folder-item">📂 Program Files</div>
+                            <div class="folder-item">📂 Windows</div>
+                            <div class="folder-item">📂 System32</div>
+                        </div>
+
+                        <div class="file-list">
+                            <div class="file-item">
+                                <div class="file-icon">📄</div>
+                                <div class="file-name">config.txt</div>
+                            </div>
+                            <div class="file-item">
+                                <div class="file-icon">📁</div>
+                                <div class="file-name">Folder</div>
+                            </div>
+                            <div class="file-item">
+                                <div class="file-icon">🎵</div>
+                                <div class="file-name">music.mp3</div>
+                            </div>
+                            <div class="file-item">
+                                <div class="file-icon">🖼️</div>
+                                <div class="file-name">image.png</div>
+                            </div>
+                            <div class="file-item">
+                                <div class="file-icon">📊</div>
+                                <div class="file-name">report.xlsx</div>
+                            </div>
+                            <div class="file-item">
+                                <div class="file-icon">🎥</div>
+                                <div class="file-name">video.mp4</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Browser Tab -->
+            <div id="browser" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">🌐 Web Browser</div>
+                    </div>
+
+                    <div class="browser-frame">
+                        <div class="browser-toolbar">
+                            <button class="btn">←</button>
+                            <button class="btn">→</button>
+                            <button class="btn">🔄</button>
+                            <input type="text" class="url-bar" placeholder="https://example.com">
+                            <button class="btn btn-primary">Go</button>
+                        </div>
+                        <div class="browser-content">
+                            📡 Browser Preview - يمكنك تصفح أي موقع من هنا
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Collager Tab -->
+            <div id="collager" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">🖼️ Image Collager</div>
+                        <div>
+                            <button class="btn">Upload Images</button>
+                            <button class="btn btn-primary">Create Collage</button>
+                        </div>
+                    </div>
+
+                    <div class="image-grid">
+                        <div class="image-item">
+                            <div class="image-placeholder">🖼️</div>
+                            <div class="image-info">
+                                <div class="image-name">screenshot-1.png</div>
+                                <div class="image-size">2.4 MB</div>
+                            </div>
+                        </div>
+                        <div class="image-item">
+                            <div class="image-placeholder">📸</div>
+                            <div class="image-info">
+                                <div class="image-name">dashboard.png</div>
+                                <div class="image-size">1.8 MB</div>
+                            </div>
+                        </div>
+                        <div class="image-item">
+                            <div class="image-placeholder">🎨</div>
+                            <div class="image-info">
+                                <div class="image-name">design.jpg</div>
+                                <div class="image-size">3.2 MB</div>
+                            </div>
+                        </div>
+                        <div class="image-item">
+                            <div class="image-placeholder">🌄</div>
+                            <div class="image-info">
+                                <div class="image-name">wallpaper.png</div>
+                                <div class="image-size">5.1 MB</div>
+                            </div>
+                        </div>
+                        <div class="image-item">
+                            <div class="image-placeholder">📷</div>
+                            <div class="image-info">
+                                <div class="image-name">photo-001.jpg</div>
+                                <div class="image-size">4.5 MB</div>
+                            </div>
+                        </div>
+                        <div class="image-item">
+                            <div class="image-placeholder">🎬</div>
+                            <div class="image-info">
+                                <div class="image-name">thumbnail.png</div>
+                                <div class="image-size">2.1 MB</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Terminal Tab -->
+            <div id="terminal" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">💻 Terminal</div>
+                        <button class="btn btn-primary">Clear</button>
+                    </div>
+
+                    <div class="terminal">
+                        <div class="terminal-line">
+                            <span class="terminal-prompt">C:\Users\Admin> </span>
+                            <span class="terminal-output">dir</span>
+                        </div>
+                        <div class="terminal-line terminal-output">
+                            Volume in drive C is OS<br>
+                            Directory of C:\Users\Admin
+                        </div>
+                        <div class="terminal-line terminal-output">
+                            10/15/2024  10:30 AM    &lt;DIR&gt;          Desktop<br>
+                            10/15/2024  10:30 AM    &lt;DIR&gt;          Documents<br>
+                            10/15/2024  10:30 AM    &lt;DIR&gt;          Downloads<br>
+                            10/15/2024  10:30 AM             2,048 config.txt
+                        </div>
+                        <div class="terminal-line">
+                            <span class="terminal-prompt">C:\Users\Admin> </span>
+                            <span class="terminal-output">ipconfig</span>
+                        </div>
+                        <div class="terminal-line terminal-output">
+                            Windows IP Configuration<br>
+                            Ethernet adapter Ethernet:<br>
+                            IPv4 Address . . . . . . . : 192.168.1.100<br>
+                            Subnet Mask . . . . . . . . : 255.255.255.0<br>
+                            Default Gateway . . . . . . : 192.168.1.1
+                        </div>
+                        <div class="terminal-line">
+                            <span class="terminal-prompt">C:\Users\Admin> </span>
+                            <span class="terminal-output">systeminfo</span>
+                        </div>
+                        <div class="terminal-line terminal-output">
+                            Computer Name: DESKTOP-WIN10<br>
+                            OS Name: Windows 10 Pro<br>
+                            OS Version: 22H2<br>
+                            Processor: Intel Core i7-10700K
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+                    <div class="card-header">
+                        <div class="card-title">Agent Management</div>
+                        <button class="btn btn-primary">Deploy Agent</button>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Agent ID</th>
+                                <th>OS</th>
+                                <th>User</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>ag-001</td>
+                                <td>Windows 10</td>
+                                <td>Administrator</td>
+                                <td><span class="status status-active">ACTIVE</span></td>
+                                <td><button class="btn">Execute</button></td>
+                            </tr>
+                            <tr>
+                                <td>ag-002</td>
+                                <td>Windows Server 2019</td>
+                                <td>System</td>
+                                <td><span class="status status-active">ACTIVE</span></td>
+                                <td><button class="btn">Execute</button></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Commands Tab -->
+            <div id="commands" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Command Execution</div>
+                        <button class="btn btn-primary">New Command</button>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Command ID</th>
+                                <th>Command</th>
+                                <th>Agent</th>
+                                <th>Status</th>
+                                <th>Output</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>cmd-001</td>
+                                <td>whoami</td>
+                                <td>ag-001</td>
+                                <td><span class="status status-active">COMPLETED</span></td>
+                                <td>ADMIN\Administrator</td>
+                            </tr>
+                            <tr>
+                                <td>cmd-002</td>
+                                <td>systeminfo</td>
+                                <td>ag-002</td>
+                                <td><span class="status status-active">EXECUTING</span></td>
+                                <td>...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Monitoring Tab -->
+            <div id="monitoring" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">System Monitoring</div>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Metric</th>
+                                <th>Value</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>CPU Usage</td>
+                                <td>45%</td>
+                                <td><span class="status status-active">NORMAL</span></td>
+                            </tr>
+                            <tr>
+                                <td>Memory Usage</td>
+                                <td>72%</td>
+                                <td><span class="status status-active">NORMAL</span></td>
+                            </tr>
+                            <tr>
+                                <td>Disk Space</td>
+                                <td>89%</td>
+                                <td><span class="status status-inactive">WARNING</span></td>
+                            </tr>
+                            <tr>
+                                <td>Network Activity</td>
+                                <td>125 Mbps</td>
+                                <td><span class="status status-active">NORMAL</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Alerts Tab -->
+            <div id="alerts" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">Security Alerts</div>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Alert ID</th>
+                                <th>Type</th>
+                                <th>Severity</th>
+                                <th>Message</th>
+                                <th>Time</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>ALR-001</td>
+                                <td>Network</td>
+                                <td><span class="status status-inactive">CRITICAL</span></td>
+                                <td>Suspicious network activity detected</td>
+                                <td>2 mins ago</td>
+                            </tr>
+                            <tr>
+                                <td>ALR-002</td>
+                                <td>Process</td>
+                                <td><span class="status status-active">WARNING</span></td>
+                                <td>Unauthorized process execution</td>
+                                <td>5 mins ago</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(tabName) {
+            // Hide all tabs
+            const tabs = document.querySelectorAll('.tab-content');
+            tabs.forEach(tab => tab.classList.remove('active'));
+
+            // Remove active from all nav items
+            const navItems = document.querySelectorAll('.nav-item');
+            navItems.forEach(item => item.classList.remove('active'));
+
+            // Show selected tab
+            const selectedTab = document.getElementById(tabName);
+            if (selectedTab) {
+                selectedTab.classList.add('active');
+            }
+
+            // Mark nav item as active
+            event.target.closest('.nav-item').classList.add('active');
+        }
+    </script>
+</body>
+</html>

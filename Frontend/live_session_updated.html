@@ -1,0 +1,241 @@
+            <!-- Live Session Tab -->
+            <div id="livesession" class="tab-content">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">🎥 Live Device Control & Monitoring</div>
+                        <div>
+                            <button class="btn">Stop Recording</button>
+                            <button class="btn btn-primary">🔴 Record Session</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">📱 Select Target Device</div>
+                    </div>
+
+                    <div class="sessions-list">
+                        <div class="session-card active" onclick="selectDevice(this)">
+                            <div class="session-name"><span class="live-indicator"></span>DESKTOP-WIN10</div>
+                            <div class="session-details">
+                                Agent: ag-001<br>
+                                User: Administrator<br>
+                                OS: Windows 10<br>
+                                IP: 192.168.1.100
+                            </div>
+                        </div>
+                        <div class="session-card" onclick="selectDevice(this)">
+                            <div class="session-name"><span class="live-indicator"></span>SERVER-DC01</div>
+                            <div class="session-details">
+                                Agent: ag-002<br>
+                                User: SYSTEM<br>
+                                OS: Windows Server 2019<br>
+                                IP: 192.168.1.50
+                            </div>
+                        </div>
+                        <div class="session-card" onclick="selectDevice(this)">
+                            <div class="session-name"><span class="live-indicator"></span>MAIL-SERVER</div>
+                            <div class="session-details">
+                                Agent: ag-004<br>
+                                User: SYSTEM<br>
+                                OS: Windows Server 2016<br>
+                                IP: 192.168.1.75
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Desktop Stream -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">📺 Live Desktop Feed - DESKTOP-WIN10 (ag-001)</div>
+                        <div class="video-controls" style="margin: 0;">
+                            <button class="btn">▶ Play</button>
+                            <button class="btn">⏸ Pause</button>
+                            <button class="btn">🔊 Audio</button>
+                            <button class="btn">⛔ Stop</button>
+                            <button class="btn btn-primary">📸 Take Screenshot</button>
+                        </div>
+                    </div>
+
+                    <div style="background: #000; border: 1px solid rgba(76, 175, 80, 0.3); border-radius: 8px; overflow: hidden;">
+                        <div class="video-player" style="height: 450px;">
+                            💻 Live Desktop Streaming
+                        </div>
+                        <div class="video-info">
+                            <div class="video-stats">
+                                <div class="stat-item">
+                                    <span>Resolution:</span>
+                                    <span>1920x1080</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span>FPS:</span>
+                                    <span>30</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span>Latency:</span>
+                                    <span>50ms</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span>Bitrate:</span>
+                                    <span>2.5 Mbps</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live File Manager from Device -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">📁 Live File Manager - DESKTOP-WIN10</div>
+                        <div>
+                            <button class="btn">🔄 Refresh</button>
+                            <button class="btn">⬆️ Upload Files</button>
+                            <button class="btn btn-primary">📥 Download</button>
+                        </div>
+                    </div>
+
+                    <div class="file-browser">
+                        <div class="folder-tree">
+                            <div class="folder-item active">📂 C:\</div>
+                            <div class="folder-item">📂 Users</div>
+                            <div style="padding-left: 20px;">
+                                <div class="folder-item">📂 Administrator</div>
+                                <div class="folder-item">📂 Documents</div>
+                                <div class="folder-item">📂 Downloads</div>
+                                <div class="folder-item">📂 Desktop</div>
+                            </div>
+                            <div class="folder-item">📂 Program Files</div>
+                            <div class="folder-item">📂 Windows</div>
+                            <div class="folder-item">📂 System32</div>
+                        </div>
+
+                        <div class="file-list">
+                            <div class="file-item">
+                                <div class="file-icon">🖼️</div>
+                                <div class="file-name">screenshot.png</div>
+                            </div>
+                            <div class="file-item">
+                                <div class="file-icon">📄</div>
+                                <div class="file-name">config.ini</div>
+                            </div>
+                            <div class="file-item">
+                                <div class="file-icon">📊</div>
+                                <div class="file-name">data.xlsx</div>
+                            </div>
+                            <div class="file-item">
+                                <div class="file-icon">📝</div>
+                                <div class="file-name">notes.txt</div>
+                            </div>
+                            <div class="file-item">
+                                <div class="file-icon">🎵</div>
+                                <div class="file-name">audio.mp3</div>
+                            </div>
+                            <div class="file-item">
+                                <div class="file-icon">🎬</div>
+                                <div class="file-name">video.mp4</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Terminal/Command Execution on Device -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">💻 Live Terminal - DESKTOP-WIN10</div>
+                        <div>
+                            <button class="btn">Clear Terminal</button>
+                            <button class="btn btn-primary">Execute Command</button>
+                        </div>
+                    </div>
+
+                    <div class="terminal" style="height: 300px;">
+                        <div class="terminal-line">
+                            <span class="terminal-prompt">C:\Users\Administrator> </span>
+                            <span class="terminal-output">systeminfo</span>
+                        </div>
+                        <div class="terminal-line terminal-output">
+                            Computer Name: DESKTOP-WIN10<br>
+                            OS Name: Windows 10 Pro<br>
+                            OS Version: 22H2<br>
+                            System Manufacturer: Dell Inc.<br>
+                            System Model: OptiPlex 7090<br>
+                            Processor: Intel(R) Core(TM) i7-10700K CPU @ 3.80GHz<br>
+                            Total Physical Memory: 32768 MB<br>
+                            Available Physical Memory: 18432 MB
+                        </div>
+                        <div class="terminal-line">
+                            <span class="terminal-prompt">C:\Users\Administrator> </span>
+                            <span class="terminal-output">tasklist</span>
+                        </div>
+                        <div class="terminal-line terminal-output">
+                            explorer.exe             1234<br>
+                            chrome.exe               2345<br>
+                            notepad.exe              3456<br>
+                            cmd.exe                  4567<br>
+                            powershell.exe           5678
+                        </div>
+                        <div class="terminal-line">
+                            <span class="terminal-prompt">C:\Users\Administrator> </span>
+                            <span class="terminal-output">ipconfig</span>
+                        </div>
+                        <div class="terminal-line terminal-output">
+                            Windows IP Configuration<br>
+                            Ethernet adapter Ethernet:<br>
+                            IPv4 Address . . . . . . . : 192.168.1.100<br>
+                            Subnet Mask . . . . . . . . : 255.255.255.0
+                        </div>
+                    </div>
+                </div>
+
+                <!-- System Stats & Monitoring -->
+                <div class="card">
+                    <div class="card-header">
+                        <div class="card-title">⚙️ Live System Monitoring - DESKTOP-WIN10</div>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Metric</th>
+                                <th>Current</th>
+                                <th>Average</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>CPU Usage</td>
+                                <td>32%</td>
+                                <td>28%</td>
+                                <td><span class="status status-active">NORMAL</span></td>
+                            </tr>
+                            <tr>
+                                <td>Memory Usage</td>
+                                <td>58%</td>
+                                <td>55%</td>
+                                <td><span class="status status-active">NORMAL</span></td>
+                            </tr>
+                            <tr>
+                                <td>Network Upload</td>
+                                <td>2.5 Mbps</td>
+                                <td>2.3 Mbps</td>
+                                <td><span class="status status-active">ACTIVE</span></td>
+                            </tr>
+                            <tr>
+                                <td>Network Download</td>
+                                <td>0.8 Mbps</td>
+                                <td>0.6 Mbps</td>
+                                <td><span class="status status-active">ACTIVE</span></td>
+                            </tr>
+                            <tr>
+                                <td>Disk Usage</td>
+                                <td>65%</td>
+                                <td>65%</td>
+                                <td><span class="status status-active">NORMAL</span></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
