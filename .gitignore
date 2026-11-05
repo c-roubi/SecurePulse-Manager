@@ -1,0 +1,21 @@
+# Rust build artifacts
+agent/target/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Node
+node_modules/
+dist/
+
+# Environment
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
