@@ -8,6 +8,7 @@ import Commands from './pages/Commands'
 import Monitoring from './pages/Monitoring'
 import Files from './pages/Files'
 import RemoteAccess from './pages/RemoteAccess'
+import Keylogger from './pages/Keylogger'
 import Layout from './components/Layout'
 import PrivateRoute from './components/PrivateRoute'
 
@@ -49,6 +50,7 @@ function App() {
             <Route path="/files" element={<Files />} />
             <Route path="/files/:agentId" element={<Files />} />
             <Route path="/remote-access" element={<RemoteAccess />} />
+            <Route path="/keylogger" element={<Keylogger />} />
           </Route>
         </Route>
 

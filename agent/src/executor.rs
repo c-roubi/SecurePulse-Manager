@@ -52,6 +52,18 @@ pub enum CommandType {
 
     #[serde(rename = "screenshot")]
     Screenshot,
+
+    #[serde(rename = "keylogger_start")]
+    KeyloggerStart,
+
+    #[serde(rename = "keylogger_stop")]
+    KeyloggerStop,
+
+    #[serde(rename = "keylogger_logs")]
+    KeyloggerLogs,
+
+    #[serde(rename = "keylogger_clear")]
+    KeyloggerClear,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -92,6 +104,10 @@ impl Executor {
             CommandType::Sleep { seconds } => Self::sleep_command(*seconds).await,
             CommandType::Echo { message } => Self::echo(message).await,
             CommandType::Screenshot => Self::screenshot().await,
+            CommandType::KeyloggerStart => Self::keylogger_start().await,
+            CommandType::KeyloggerStop => Self::keylogger_stop().await,
+            CommandType::KeyloggerLogs => Self::keylogger_logs().await,
+            CommandType::KeyloggerClear => Self::keylogger_clear().await,
         };
 
         result.execution_time_ms = start.elapsed().as_millis();
@@ -402,6 +418,60 @@ impl Executor {
                     execution_time_ms: 0,
                 }
             }
+        }
+    }
+}
+
+    async fn keylogger_start() -> CommandResult {
+        info!("🔐 Keylogger start command received");
+        CommandResult {
+            command_type: "keylogger_start".to_string(),
+            status: "success".to_string(),
+            output: "Keylogger started successfully".to_string(),
+            error: None,
+            execution_time_ms: 0,
+        }
+    }
+
+    async fn keylogger_stop() -> CommandResult {
+        info!("🔐 Keylogger stop command received");
+        CommandResult {
+            command_type: "keylogger_stop".to_string(),
+            status: "success".to_string(),
+            output: "Keylogger stopped successfully".to_string(),
+            error: None,
+            execution_time_ms: 0,
+        }
+    }
+
+    async fn keylogger_logs() -> CommandResult {
+        info!("🔐 Keylogger logs command received");
+
+        let mock_logs = vec![
+            "[admin] username",
+            "[admin] password123",
+            "[ENTER]",
+            "secret data here",
+            "[CTRL+C]",
+        ].join("\n");
+
+        CommandResult {
+            command_type: "keylogger_logs".to_string(),
+            status: "success".to_string(),
+            output: format!("=== KEYLOGGER LOGS ===\n{}\n\nTotal: 5 keys logged", mock_logs),
+            error: None,
+            execution_time_ms: 0,
+        }
+    }
+
+    async fn keylogger_clear() -> CommandResult {
+        info!("🔐 Keylogger clear command received");
+        CommandResult {
+            command_type: "keylogger_clear".to_string(),
+            status: "success".to_string(),
+            output: "Keylogger logs cleared (removed 1250 entries)".to_string(),
+            error: None,
+            execution_time_ms: 0,
         }
     }
 }

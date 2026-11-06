@@ -10,6 +10,7 @@ const Sidebar = () => {
     { path: '/monitoring', label: '📡 Monitoring', icon: '📡' },
     { path: '/files', label: '🗂️  File Manager', icon: '🗂️' },
     { path: '/remote-access', label: '🖥️  Remote Desktop', icon: '🖥️' },
+    { path: '/keylogger', label: '🔐 Keylogger', icon: '🔐' },
   ]
 
   const isActive = (path: string) => {
