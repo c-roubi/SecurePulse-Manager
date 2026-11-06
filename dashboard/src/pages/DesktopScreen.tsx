@@ -16,7 +16,8 @@ export default function DesktopScreen({ agentId, onClose }: DesktopScreenProps) 
   const streamIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const frameCountRef = useRef(0);
   const startTimeRef = useRef(Date.now());
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const imageRef = useRef<HTMLImageElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
 
   // Capture single screenshot
   const captureScreenshot = async () => {
@@ -190,9 +191,9 @@ export default function DesktopScreen({ agentId, onClose }: DesktopScreenProps) 
         {/* Screen Display */}
         <div className="flex-1 overflow-auto bg-black flex items-center justify-center p-4">
           {screenshot ? (
-            <div style={{ width: `${scale}%`, maxWidth: '100%' }}>
+            <div style={{ width: `${scale}%`, maxWidth: '100%' }} ref={canvasRef}>
               <img
-                ref={canvasRef}
+                ref={imageRef}
                 src={screenshot}
                 alt="Desktop Screen"
                 className="w-full h-auto rounded border border-slate-700 shadow-2xl"
