@@ -143,6 +143,7 @@ impl Executor {
         match Command::new(shell).arg(arg).arg(command).output() {
             Ok(output) => {
                 let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                info!("Shell command output:\n{}", stdout);
                 CommandResult {
                     command_type: "shell".to_string(),
                     status: "success".to_string(),
