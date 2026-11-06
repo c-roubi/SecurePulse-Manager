@@ -9,7 +9,7 @@ import json
 from datetime import datetime
 
 from app.database import init_db, close_db
-from app.api import auth, sessions, agents, commands, monitoring
+from app.api import auth, sessions, agents, commands, monitoring, files
 from app.agent_manager import agent_manager
 
 # Configure logging
@@ -69,6 +69,7 @@ app.include_router(sessions.router, prefix="/api")
 app.include_router(agents.router, prefix="/api")
 app.include_router(commands.router, prefix="/api")
 app.include_router(monitoring.router, prefix="/api")
+app.include_router(files.router, prefix="/api")
 
 
 # ============ Health & Status Endpoints ============
