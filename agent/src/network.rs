@@ -4,6 +4,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use tokio::net::TcpStream;
 use std::collections::HashMap;
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 /// Network configuration options
 #[derive(Clone, Debug)]
@@ -298,7 +299,7 @@ impl ProxyTunnel {
             ProxyAuthType::Basic => {
                 if let (Some(user), Some(pass)) = (&self.proxy_config.username, &self.proxy_config.password) {
                     let auth_str = format!("{}:{}", user, pass);
-                    let encoded = base64::encode(&auth_str);
+                    let encoded = BASE64.encode(&auth_str);
                     request.push_str(&format!("Proxy-Authorization: Basic {}\r\n", encoded));
                 }
             }
@@ -356,7 +357,7 @@ impl DnsTunnel {
         // Encode data based on encoding method
         let encoded = match self.config.encoding {
             DnsEncoding::Base32 => base32::encode(base32::Alphabet::RFC4648 { padding: false }, data),
-            DnsEncoding::Base64 => base64::encode(data),
+            DnsEncoding::Base64 => BASE64.encode(data),
             DnsEncoding::Hex => hex::encode(data),
             DnsEncoding::Ascii => String::from_utf8(data.to_vec())?,
         };

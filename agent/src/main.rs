@@ -9,16 +9,16 @@ mod recon;
 mod crypto;
 mod mutation;
 mod camouflage;
+#[allow(dead_code, unused_imports, unused_variables, unused_mut)]
 mod network;
+#[allow(dead_code, unused_imports, unused_variables, unused_mut)]
 mod port_handler;
 
 use config::Config;
-use communicator::{Communicator, BeaconPayload};
+use communicator::BeaconPayload;
 use executor::{CommandType, Executor};
 use recon::SystemInfo;
 use crypto::CryptoManager;
-use network::{NetworkConfig, ConnectionMethod, PortScanner, NetworkEnumerator, MultiBeacon};
-use port_handler::{PortHandler, PortForwardingTunnel, ProtocolType};
 use camouflage::CamouflageMode;
 
 #[tokio::main]
@@ -209,8 +209,8 @@ async fn run_agent(
 
                 let backoff = 2_u64.pow(reconnect_count as u32);
                 error!(
-                    "Connection failed (attempt {}/{}), retrying in {}s",
-                    reconnect_count, max_reconnects, backoff
+                    "Connection failed ({}), attempt {}/{}, retrying in {}s",
+                    e, reconnect_count, max_reconnects, backoff
                 );
 
                 sleep(Duration::from_secs(backoff)).await;

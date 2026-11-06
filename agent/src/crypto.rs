@@ -25,6 +25,7 @@ const CIPHER_CHACHA20_POLY1305: u8 = 0x02;
 const HMAC_SHA256: u8 = 0x10;
 const HMAC_BLAKE3: u8 = 0x11;
 
+#[allow(dead_code)]
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct KeyExchangePayload {
     pub public_key: Vec<u8>,
@@ -37,6 +38,7 @@ enum CipherAlgo {
     ChaCha20Poly1305,
 }
 
+#[allow(dead_code)]
 impl CipherAlgo {
     fn id(&self) -> u8 {
         match self {
@@ -60,6 +62,7 @@ enum HmacAlgo {
     Blake3,
 }
 
+#[allow(dead_code)]
 impl HmacAlgo {
     fn id(&self) -> u8 {
         match self {
@@ -77,6 +80,7 @@ impl HmacAlgo {
     }
 }
 
+#[allow(dead_code)]
 pub struct KeyChain {
     chain_key: [u8; 32],
     enc_key: [u8; 32],
@@ -87,6 +91,7 @@ pub struct KeyChain {
     hmac_algo: HmacAlgo,
 }
 
+#[allow(dead_code)]
 impl KeyChain {
     fn derive_from_chain(chain_key: &[u8; 32], salt: &[u8]) -> Result<Self, Box<dyn std::error::Error>> {
         let hk = Hkdf::<Sha256>::new(Some(salt), chain_key);
@@ -220,15 +225,25 @@ impl KeyChain {
 
     fn verify_hmac(&self, data: &[u8], provided: &[u8]) -> bool {
         let computed = self.compute_hmac(data);
-        computed == provided
+        if computed.len() != provided.len() {
+            return false;
+        }
+        // Constant-time comparison to prevent timing attacks
+        let mut diff = 0u8;
+        for (a, b) in computed.iter().zip(provided.iter()) {
+            diff |= a ^ b;
+        }
+        diff == 0
     }
 }
 
+#[allow(dead_code)]
 pub struct CryptoManager {
     psk: [u8; 32],
     key_chain: Option<KeyChain>,
 }
 
+#[allow(dead_code)]
 impl CryptoManager {
     pub fn new(psk: &[u8; 32]) -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Self {

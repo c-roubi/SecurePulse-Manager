@@ -11,11 +11,13 @@ const ENCODING_HEX: u8 = 1;
 const ENCODING_BASE64URL: u8 = 2;
 const ENCODING_BASE64_NOPAD: u8 = 3;
 
+#[allow(dead_code)]
 pub struct MutationEngine {
     seed: [u8; 32],
     mutation_index: u64,
 }
 
+#[allow(dead_code)]
 impl MutationEngine {
     pub fn new(seed: &[u8; 32]) -> Self {
         Self {
