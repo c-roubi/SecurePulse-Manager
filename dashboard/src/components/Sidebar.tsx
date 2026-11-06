@@ -9,11 +9,15 @@ const Sidebar = () => {
     { path: '/commands', label: '⌨️  Commands', icon: '⌨️' },
     { path: '/monitoring', label: '📡 Monitoring', icon: '📡' },
     { path: '/files', label: '🗂️  File Manager', icon: '🗂️' },
+    { path: '/remote-access', label: '🖥️  Remote Desktop', icon: '🖥️' },
   ]
 
   const isActive = (path: string) => {
     if (path === '/files') {
       return location.pathname.startsWith('/files')
+    }
+    if (path === '/remote-access') {
+      return location.pathname.startsWith('/remote-access')
     }
     return location.pathname === path || (path === '/dashboard' && location.pathname === '/')
   }

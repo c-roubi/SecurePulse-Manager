@@ -9,6 +9,7 @@ mod recon;
 mod crypto;
 mod mutation;
 mod camouflage;
+mod screenshot;
 #[allow(dead_code, unused_imports, unused_variables, unused_mut)]
 mod network;
 #[allow(dead_code, unused_imports, unused_variables, unused_mut)]

