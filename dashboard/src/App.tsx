@@ -6,7 +6,7 @@ import Dashboard from './pages/Dashboard'
 import Sessions from './pages/Sessions'
 import Commands from './pages/Commands'
 import Monitoring from './pages/Monitoring'
-import FileManager from './pages/FileManager'
+import Files from './pages/Files'
 import Layout from './components/Layout'
 import PrivateRoute from './components/PrivateRoute'
 
@@ -45,7 +45,8 @@ function App() {
             <Route path="/sessions" element={<Sessions />} />
             <Route path="/commands" element={<Commands />} />
             <Route path="/monitoring" element={<Monitoring />} />
-            <Route path="/files/:agentId" element={<FileManager agentId="" />} />
+            <Route path="/files" element={<Files />} />
+            <Route path="/files/:agentId" element={<Files />} />
           </Route>
         </Route>
 

@@ -8,9 +8,13 @@ const Sidebar = () => {
     { path: '/sessions', label: '🔗 Sessions', icon: '🔗' },
     { path: '/commands', label: '⌨️  Commands', icon: '⌨️' },
     { path: '/monitoring', label: '📡 Monitoring', icon: '📡' },
+    { path: '/files', label: '🗂️  File Manager', icon: '🗂️' },
   ]
 
   const isActive = (path: string) => {
+    if (path === '/files') {
+      return location.pathname.startsWith('/files')
+    }
     return location.pathname === path || (path === '/dashboard' && location.pathname === '/')
   }
 
