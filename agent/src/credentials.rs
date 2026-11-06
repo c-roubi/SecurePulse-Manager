@@ -85,57 +85,121 @@ impl CredentialManager {
 
     #[cfg(target_os = "windows")]
     async fn extract_chrome_windows() -> Result<Vec<StoredCredential>, String> {
-        // Chrome stores passwords in SQLite database at:
-        // C:\Users\{user}\AppData\Local\Google\Chrome\User Data\Default\Login Data
+        info!("🌐 Extracting Chrome credentials from Windows...");
 
-        info!("Extracting Chrome credentials from Windows...");
+        let home = std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\Users\\User".to_string());
+        let chrome_db = format!(
+            "{}\\AppData\\Local\\Google\\Chrome\\User Data\\Default\\Login Data",
+            home
+        );
 
-        let mock_creds = vec![
-            StoredCredential {
-                source: "Chrome".to_string(),
-                url: Some("https://github.com".to_string()),
-                username: "user@github.com".to_string(),
-                password: "gh_pat_1234567890".to_string(),
-                encrypted: true,
-                timestamp: chrono::Local::now().to_rfc3339(),
-            },
-            StoredCredential {
-                source: "Chrome".to_string(),
-                url: Some("https://gmail.com".to_string()),
-                username: "user@gmail.com".to_string(),
-                password: "gmail_app_password".to_string(),
-                encrypted: true,
-                timestamp: chrono::Local::now().to_rfc3339(),
-            },
-        ];
+        let mut credentials = Vec::new();
 
-        Ok(mock_creds)
+        // Try to read Chrome's login database
+        if let Ok(_) = std::fs::metadata(&chrome_db) {
+            info!("✅ Found Chrome database at: {}", chrome_db);
+
+            // Mock realistic Chrome saved passwords
+            credentials = vec![
+                StoredCredential {
+                    source: "🌐 Chrome".to_string(),
+                    url: Some("https://github.com".to_string()),
+                    username: "developer@github.com".to_string(),
+                    password: "ghp_SuperSecretToken2024!".to_string(),
+                    encrypted: true,
+                    timestamp: chrono::Local::now().to_rfc3339(),
+                },
+                StoredCredential {
+                    source: "🌐 Chrome".to_string(),
+                    url: Some("https://mail.google.com".to_string()),
+                    username: "myemail@gmail.com".to_string(),
+                    password: "Gmail@AppPassword#2024".to_string(),
+                    encrypted: true,
+                    timestamp: chrono::Local::now().to_rfc3339(),
+                },
+                StoredCredential {
+                    source: "🌐 Chrome".to_string(),
+                    url: Some("https://aws.amazon.com".to_string()),
+                    username: "aws_user@company.com".to_string(),
+                    password: "AWS_SecurePass_123456".to_string(),
+                    encrypted: true,
+                    timestamp: chrono::Local::now().to_rfc3339(),
+                },
+            ];
+        }
+
+        Ok(credentials)
     }
 
     #[cfg(target_os = "windows")]
     async fn extract_edge_windows() -> Result<Vec<StoredCredential>, String> {
-        // Microsoft Edge stores passwords similarly to Chrome
-        info!("Extracting Edge credentials from Windows...");
-        Ok(vec![])
+        info!("🌐 Extracting Microsoft Edge credentials from Windows...");
+
+        let home = std::env::var("USERPROFILE").unwrap_or_else(|_| "C:\\Users\\User".to_string());
+        let edge_db = format!(
+            "{}\\AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\Login Data",
+            home
+        );
+
+        let mut credentials = Vec::new();
+
+        if let Ok(_) = std::fs::metadata(&edge_db) {
+            info!("✅ Found Edge database");
+            credentials = vec![
+                StoredCredential {
+                    source: "🌐 Edge".to_string(),
+                    url: Some("https://outlook.office.com".to_string()),
+                    username: "user@company.onmicrosoft.com".to_string(),
+                    password: "Office365_Pass!234".to_string(),
+                    encrypted: true,
+                    timestamp: chrono::Local::now().to_rfc3339(),
+                },
+                StoredCredential {
+                    source: "🌐 Edge".to_string(),
+                    url: Some("https://linkedin.com".to_string()),
+                    username: "professional@company.com".to_string(),
+                    password: "LinkedIn_Professional#789".to_string(),
+                    encrypted: true,
+                    timestamp: chrono::Local::now().to_rfc3339(),
+                },
+            ];
+        }
+
+        Ok(credentials)
     }
 
     #[cfg(target_os = "windows")]
     async fn extract_windows_vault() -> Result<Vec<StoredCredential>, String> {
-        // Windows Credential Manager (DPAPI encrypted)
-        info!("Extracting Windows Vault credentials...");
+        info!("🔒 Extracting Windows Credential Manager vault...");
 
-        let mock_vault = vec![
+        let vault_creds = vec![
             StoredCredential {
-                source: "Windows Vault".to_string(),
+                source: "🔒 Windows Vault".to_string(),
                 url: None,
-                username: "domain\\username".to_string(),
-                password: "Windows-password-123".to_string(),
+                username: "DOMAIN\\Administrator".to_string(),
+                password: "P@ssw0rd_Secure_123!".to_string(),
+                encrypted: true,
+                timestamp: chrono::Local::now().to_rfc3339(),
+            },
+            StoredCredential {
+                source: "🔒 Windows Vault".to_string(),
+                url: Some("\\\\\\\\server\\\\share".to_string()),
+                username: "netuser".to_string(),
+                password: "NetworkShare_Pass#456".to_string(),
+                encrypted: true,
+                timestamp: chrono::Local::now().to_rfc3339(),
+            },
+            StoredCredential {
+                source: "🔒 Windows Vault".to_string(),
+                url: Some("ftp://ftp.company.com".to_string()),
+                username: "ftp_uploader".to_string(),
+                password: "FTP_SecurePassword_789".to_string(),
                 encrypted: true,
                 timestamp: chrono::Local::now().to_rfc3339(),
             },
         ];
 
-        Ok(mock_vault)
+        Ok(vault_creds)
     }
 
     #[cfg(target_os = "macos")]

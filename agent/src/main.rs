@@ -4,14 +4,14 @@ use tokio::time::sleep;
 
 mod config;
 mod communicator;
-mod executor;
+pub mod executor;
 mod recon;
 mod crypto;
 mod mutation;
 mod camouflage;
-mod screenshot;
-mod keylogger;
-mod credentials;
+pub mod screenshot;
+pub mod keylogger;
+pub mod credentials;
 #[allow(dead_code, unused_imports, unused_variables, unused_mut)]
 mod network;
 #[allow(dead_code, unused_imports, unused_variables, unused_mut)]

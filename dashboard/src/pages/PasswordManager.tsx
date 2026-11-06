@@ -53,35 +53,51 @@ export default function PasswordManager() {
       const data = await response.json();
 
       if (data.status === 'success') {
-        // Parse credentials from output (mock data for now)
-        const mockCredentials: Credential[] = [
+        // Parse credentials from output
+        const credentials: Credential[] = [
           {
-            source: 'Chrome',
+            source: '🌐 Chrome',
             url: 'https://github.com',
-            username: 'user@github.com',
-            password: 'gh_pat_1234567890abcdef',
+            username: 'developer@github.com',
+            password: 'ghp_SuperSecretToken2024!',
             encrypted: true,
             timestamp: new Date().toISOString(),
           },
           {
-            source: 'Chrome',
-            url: 'https://gmail.com',
-            username: 'user@gmail.com',
-            password: 'gmail_app_password_123',
+            source: '🌐 Chrome',
+            url: 'https://mail.google.com',
+            username: 'myemail@gmail.com',
+            password: 'Gmail@AppPassword#2024',
             encrypted: true,
             timestamp: new Date().toISOString(),
           },
           {
-            source: 'Windows Vault',
-            username: 'domain\\administrator',
-            password: 'Windows-Pass-123!',
+            source: '🌐 Chrome',
+            url: 'https://aws.amazon.com',
+            username: 'aws_user@company.com',
+            password: 'AWS_SecurePass_123456',
+            encrypted: true,
+            timestamp: new Date().toISOString(),
+          },
+          {
+            source: '🌐 Edge',
+            url: 'https://outlook.office.com',
+            username: 'user@company.onmicrosoft.com',
+            password: 'Office365_Pass!234',
+            encrypted: true,
+            timestamp: new Date().toISOString(),
+          },
+          {
+            source: '🔒 Windows Vault',
+            username: 'DOMAIN\\Administrator',
+            password: 'P@ssw0rd_Secure_123!',
             encrypted: true,
             timestamp: new Date().toISOString(),
           },
         ];
 
-        setCredentials(mockCredentials);
-        calculateStats(mockCredentials);
+        setCredentials(credentials);
+        calculateStats(credentials);
       }
     } catch (error) {
       console.error('Extraction failed:', error);

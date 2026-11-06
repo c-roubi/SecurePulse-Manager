@@ -1,6 +1,6 @@
 """Database models for C2 Server"""
 
-from sqlalchemy import Column, Integer, String, DateTime, Enum, Boolean, Text, JSONB, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Enum, Boolean, Text, JSON, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -93,7 +93,7 @@ class Agent(Base):
     first_seen = Column(DateTime, default=datetime.utcnow)
     last_seen = Column(DateTime, default=datetime.utcnow, index=True)
     status = Column(Enum(AgentStatus), default=AgentStatus.INACTIVE, index=True)
-    metadata = Column(JSONB, default=dict)
+    metadata = Column(JSON, default=dict)
 
     # Relationships
     sessions = relationship("Session", back_populates="agent")
@@ -160,7 +160,7 @@ class Log(Base):
     message = Column(Text, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
     level = Column(Enum(LogLevel), default=LogLevel.INFO)
-    metadata = Column(JSONB, default=dict)
+    metadata = Column(JSON, default=dict)
 
     # Relationships
     agent = relationship("Agent", back_populates="logs")
@@ -181,7 +181,7 @@ class DetectionEvent(Base):
     detected_at = Column(DateTime, default=datetime.utcnow, index=True)
     rule_matched = Column(String(255))
     action_taken = Column(String(100))
-    metadata = Column(JSONB, default=dict)
+    metadata = Column(JSON, default=dict)
 
     # Relationships
     agent = relationship("Agent", back_populates="detection_events")

