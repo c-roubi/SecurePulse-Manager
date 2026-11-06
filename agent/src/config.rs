@@ -13,6 +13,9 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
+        // Load from .env file if it exists
+        let _ = dotenv::dotenv();
+
         let c2_url = env::var("C2_URL").unwrap_or_else(|_| "localhost".to_string());
         let c2_port = env::var("C2_PORT")
             .unwrap_or_else(|_| "8000".to_string())
