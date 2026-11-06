@@ -57,12 +57,13 @@ def decode_token(token: str) -> dict:
         raise ValueError(f"Invalid token: {e}")
 
 
-async def get_current_user(
-    credentials: HTTPAuthCredentials = Depends(security)
-) -> str:
+async def get_current_user(token: str = Depends(security)) -> str:
     """Get current user from token"""
     try:
-        token = credentials.credentials
+        # Extract token from Bearer header if needed
+        if isinstance(token, str) and token.startswith("Bearer "):
+            token = token.split(" ")[1]
+
         payload = decode_token(token)
         username: str = payload.get("sub")
 
