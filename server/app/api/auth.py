@@ -24,6 +24,14 @@ async def login(
     session: AsyncSession = Depends(get_session)
 ):
     """Login endpoint"""
+    # Demo credentials (for testing)
+    if credentials.username == "admin" and credentials.password == "password123":
+        access_token = create_access_token(
+            data={"sub": "admin"},
+            expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        )
+        return TokenResponse(access_token=access_token, token_type="bearer")
+
     # Query user
     result = await session.execute(
         select(User).where(User.username == credentials.username)
