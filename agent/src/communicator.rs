@@ -328,8 +328,8 @@ impl Communicator {
             None => return Err("WebSocket not connected".into()),
         };
 
-        // Non-blocking read with short timeout so the main loop keeps running
-        match timeout(Duration::from_secs(2), stream.next()).await {
+        // Wait for commands with timeout (beacons sent every 15s, so 5s is reasonable)
+        match timeout(Duration::from_secs(5), stream.next()).await {
             Ok(Some(Ok(msg))) => {
                 match msg {
                     WsMessage::Text(text) => {
