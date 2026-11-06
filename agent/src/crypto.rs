@@ -1,12 +1,13 @@
 use aes_gcm::{
     aead::{Aead, KeyInit},
-    Aes256Gcm, Nonce,
+    Aes256Gcm, Nonce as AesNonce,
 };
+use chacha20poly1305::{ChaCha20Poly1305, Nonce as ChaNonce};
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
 use rand::Rng;
 use sha2::Sha256;
-use x25519_dalek::{EphemeralSecret, PublicKey, SharedSecret};
+use x25519_dalek::{EphemeralSecret, PublicKey};
 use serde::{Deserialize, Serialize};
 use log::{info, debug};
 
@@ -16,10 +17,64 @@ const HKDF_INFO_ENC: &[u8] = b"securepulse-enc-key";
 const HKDF_INFO_HMAC: &[u8] = b"securepulse-hmac-key";
 const HKDF_INFO_NEXT: &[u8] = b"securepulse-chain-next";
 
+// Cipher suite IDs embedded in wire format
+const CIPHER_AES_256_GCM: u8 = 0x01;
+const CIPHER_CHACHA20_POLY1305: u8 = 0x02;
+
+// HMAC algorithm IDs
+const HMAC_SHA256: u8 = 0x10;
+const HMAC_BLAKE3: u8 = 0x11;
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct KeyExchangePayload {
     pub public_key: Vec<u8>,
     pub salt: Vec<u8>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum CipherAlgo {
+    Aes256Gcm,
+    ChaCha20Poly1305,
+}
+
+impl CipherAlgo {
+    fn id(&self) -> u8 {
+        match self {
+            Self::Aes256Gcm => CIPHER_AES_256_GCM,
+            Self::ChaCha20Poly1305 => CIPHER_CHACHA20_POLY1305,
+        }
+    }
+
+    fn from_id(id: u8) -> Result<Self, Box<dyn std::error::Error>> {
+        match id {
+            CIPHER_AES_256_GCM => Ok(Self::Aes256Gcm),
+            CIPHER_CHACHA20_POLY1305 => Ok(Self::ChaCha20Poly1305),
+            _ => Err(format!("Unknown cipher ID: 0x{:02x}", id).into()),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum HmacAlgo {
+    Sha256,
+    Blake3,
+}
+
+impl HmacAlgo {
+    fn id(&self) -> u8 {
+        match self {
+            Self::Sha256 => HMAC_SHA256,
+            Self::Blake3 => HMAC_BLAKE3,
+        }
+    }
+
+    fn from_id(id: u8) -> Result<Self, Box<dyn std::error::Error>> {
+        match id {
+            HMAC_SHA256 => Ok(Self::Sha256),
+            HMAC_BLAKE3 => Ok(Self::Blake3),
+            _ => Err(format!("Unknown HMAC ID: 0x{:02x}", id).into()),
+        }
+    }
 }
 
 pub struct KeyChain {
@@ -28,6 +83,8 @@ pub struct KeyChain {
     hmac_key: [u8; 32],
     message_index: u64,
     prev_nonce: [u8; 12],
+    cipher_algo: CipherAlgo,
+    hmac_algo: HmacAlgo,
 }
 
 impl KeyChain {
@@ -48,6 +105,8 @@ impl KeyChain {
             hmac_key,
             message_index: 0,
             prev_nonce: [0u8; 12],
+            cipher_algo: CipherAlgo::Aes256Gcm,
+            hmac_algo: HmacAlgo::Sha256,
         })
     }
 
@@ -58,8 +117,9 @@ impl KeyChain {
         hk.expand(HKDF_INFO_NEXT, &mut next_chain)
             .map_err(|_| "HKDF ratchet failed")?;
 
-        let mut new_enc = [0u8; 32];
         let hk2 = Hkdf::<Sha256>::new(Some(&self.message_index.to_be_bytes()), &next_chain);
+
+        let mut new_enc = [0u8; 32];
         hk2.expand(HKDF_INFO_ENC, &mut new_enc)
             .map_err(|_| "HKDF expand failed for new enc_key")?;
 
@@ -72,8 +132,29 @@ impl KeyChain {
         self.hmac_key = new_hmac;
         self.message_index += 1;
 
-        debug!("Key ratcheted to index {}", self.message_index);
+        // Rotate cipher suite deterministically from chain state
+        self.cipher_algo = self.select_cipher();
+        self.hmac_algo = self.select_hmac();
+
+        debug!("Ratchet #{}: cipher={:?}, hmac={:?}",
+            self.message_index, self.cipher_algo, self.hmac_algo);
         Ok(())
+    }
+
+    fn select_cipher(&self) -> CipherAlgo {
+        let selector = self.chain_key[0];
+        match selector % 2 {
+            0 => CipherAlgo::Aes256Gcm,
+            _ => CipherAlgo::ChaCha20Poly1305,
+        }
+    }
+
+    fn select_hmac(&self) -> HmacAlgo {
+        let selector = self.chain_key[1];
+        match selector % 2 {
+            0 => HmacAlgo::Sha256,
+            _ => HmacAlgo::Blake3,
+        }
     }
 
     fn derive_nonce(&self) -> [u8; 12] {
@@ -85,6 +166,61 @@ impl KeyChain {
         let mut nonce = [0u8; 12];
         nonce.copy_from_slice(&hash.as_bytes()[..12]);
         nonce
+    }
+
+    fn encrypt_data(&self, nonce: &[u8; 12], plaintext: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        match self.cipher_algo {
+            CipherAlgo::Aes256Gcm => {
+                let cipher = Aes256Gcm::new_from_slice(&self.enc_key)
+                    .map_err(|e| format!("AES init failed: {}", e))?;
+                cipher.encrypt(AesNonce::from_slice(nonce), plaintext)
+                    .map_err(|e| format!("AES encrypt failed: {}", e).into())
+            }
+            CipherAlgo::ChaCha20Poly1305 => {
+                let cipher = ChaCha20Poly1305::new_from_slice(&self.enc_key)
+                    .map_err(|e| format!("ChaCha20 init failed: {}", e))?;
+                cipher.encrypt(ChaNonce::from_slice(nonce), plaintext)
+                    .map_err(|e| format!("ChaCha20 encrypt failed: {}", e).into())
+            }
+        }
+    }
+
+    fn decrypt_data(&self, nonce: &[u8; 12], ciphertext: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        match self.cipher_algo {
+            CipherAlgo::Aes256Gcm => {
+                let cipher = Aes256Gcm::new_from_slice(&self.enc_key)
+                    .map_err(|e| format!("AES init failed: {}", e))?;
+                cipher.decrypt(AesNonce::from_slice(nonce), ciphertext)
+                    .map_err(|e| format!("AES decrypt failed: {}", e).into())
+            }
+            CipherAlgo::ChaCha20Poly1305 => {
+                let cipher = ChaCha20Poly1305::new_from_slice(&self.enc_key)
+                    .map_err(|e| format!("ChaCha20 init failed: {}", e))?;
+                cipher.decrypt(ChaNonce::from_slice(nonce), ciphertext)
+                    .map_err(|e| format!("ChaCha20 decrypt failed: {}", e).into())
+            }
+        }
+    }
+
+    fn compute_hmac(&self, data: &[u8]) -> Vec<u8> {
+        match self.hmac_algo {
+            HmacAlgo::Sha256 => {
+                let mut mac = <HmacSha256 as Mac>::new_from_slice(&self.hmac_key)
+                    .expect("HMAC can take key of any size");
+                mac.update(data);
+                mac.finalize().into_bytes().to_vec()
+            }
+            HmacAlgo::Blake3 => {
+                let mut hasher = blake3::Hasher::new_keyed(&self.hmac_key);
+                hasher.update(data);
+                hasher.finalize().as_bytes().to_vec()
+            }
+        }
+    }
+
+    fn verify_hmac(&self, data: &[u8], provided: &[u8]) -> bool {
+        let computed = self.compute_hmac(data);
+        computed == provided
     }
 }
 
@@ -129,7 +265,6 @@ impl CryptoManager {
 
         let shared_secret = our_secret.diffie_hellman(&server_public);
 
-        // Combine ECDH shared secret with PSK for extra security
         let mut combined = [0u8; 64];
         combined[..32].copy_from_slice(shared_secret.as_bytes());
         combined[32..].copy_from_slice(&self.psk);
@@ -154,27 +289,25 @@ impl CryptoManager {
 
     pub fn encrypt(&mut self, plaintext: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let chain = self.key_chain.as_mut()
-            .ok_or("KeyChain not initialized - call init_with_psk or complete_key_exchange first")?;
+            .ok_or("KeyChain not initialized")?;
 
         let nonce_bytes = chain.derive_nonce();
-        let nonce = Nonce::from_slice(&nonce_bytes);
 
-        let cipher = Aes256Gcm::new_from_slice(&chain.enc_key)
-            .map_err(|e| format!("Cipher init failed: {}", e))?;
+        let ciphertext = chain.encrypt_data(&nonce_bytes, plaintext)?;
 
-        let ciphertext = cipher.encrypt(nonce, plaintext)
-            .map_err(|e| format!("Encryption failed: {}", e))?;
-
-        // Header: [message_index (8 bytes)] [nonce (12 bytes)] [ciphertext] [HMAC (32 bytes)]
-        let mut result = Vec::with_capacity(8 + 12 + ciphertext.len() + 32);
+        // Wire format v3:
+        // [version (1)] [cipher_id (1)] [hmac_id (1)] [msg_index (8)] [nonce (12)] [ciphertext] [MAC (32)]
+        let mut result = Vec::with_capacity(3 + 8 + 12 + ciphertext.len() + 32);
+        result.push(0x03); // version 3
+        result.push(chain.cipher_algo.id());
+        result.push(chain.hmac_algo.id());
         result.extend_from_slice(&chain.message_index.to_be_bytes());
         result.extend_from_slice(&nonce_bytes);
         result.extend_from_slice(&ciphertext);
 
-        let hmac = compute_hmac(&chain.hmac_key, &result);
-        result.extend_from_slice(&hmac);
+        let mac = chain.compute_hmac(&result);
+        result.extend_from_slice(&mac);
 
-        // Advance the ratchet
         chain.prev_nonce = nonce_bytes;
         chain.ratchet()?;
 
@@ -182,34 +315,41 @@ impl CryptoManager {
     }
 
     pub fn decrypt(&mut self, data: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        // Minimum: 8 (index) + 12 (nonce) + 16 (AES-GCM tag) + 32 (HMAC)
-        if data.len() < 68 {
+        // Minimum: 3 (header) + 8 (index) + 12 (nonce) + 16 (AEAD tag) + 32 (MAC)
+        if data.len() < 71 {
             return Err("Encrypted data too short".into());
+        }
+
+        let version = data[0];
+        if version != 0x03 {
+            return Err(format!("Unsupported wire version: 0x{:02x}", version).into());
         }
 
         let chain = self.key_chain.as_mut()
             .ok_or("KeyChain not initialized")?;
 
-        let hmac_offset = data.len() - 32;
-        let payload = &data[..hmac_offset];
-        let provided_hmac = &data[hmac_offset..];
+        let wire_cipher = CipherAlgo::from_id(data[1])?;
+        let wire_hmac = HmacAlgo::from_id(data[2])?;
 
-        let computed_hmac = compute_hmac(&chain.hmac_key, payload);
-        if computed_hmac != provided_hmac {
-            return Err("HMAC verification failed - message tampered or wrong key state".into());
+        if wire_cipher != chain.cipher_algo || wire_hmac != chain.hmac_algo {
+            return Err("Cipher suite mismatch - sender and receiver out of sync".into());
         }
 
-        let _msg_index = u64::from_be_bytes(data[..8].try_into()?);
-        let nonce = Nonce::from_slice(&data[8..20]);
-        let ciphertext = &data[20..hmac_offset];
+        // Verify MAC
+        let mac_offset = data.len() - 32;
+        let payload = &data[..mac_offset];
+        let provided_mac = &data[mac_offset..];
 
-        let cipher = Aes256Gcm::new_from_slice(&chain.enc_key)
-            .map_err(|e| format!("Cipher init failed: {}", e))?;
+        if !chain.verify_hmac(payload, provided_mac) {
+            return Err("MAC verification failed".into());
+        }
 
-        let plaintext = cipher.decrypt(nonce, ciphertext)
-            .map_err(|e| format!("Decryption failed: {}", e))?;
+        let nonce: [u8; 12] = data[11..23].try_into()?;
+        let ciphertext = &data[23..mac_offset];
 
-        chain.prev_nonce = data[8..20].try_into()?;
+        let plaintext = chain.decrypt_data(&nonce, ciphertext)?;
+
+        chain.prev_nonce = nonce;
         chain.ratchet()?;
 
         Ok(plaintext)
@@ -220,40 +360,85 @@ impl CryptoManager {
     }
 }
 
-fn compute_hmac(key: &[u8], data: &[u8]) -> Vec<u8> {
-    let mut mac = <HmacSha256 as Mac>::new_from_slice(key)
-        .expect("HMAC can take key of any size");
-    mac.update(data);
-    mac.finalize().into_bytes().to_vec()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn make_synced_pair(key: &[u8; 32], salt: &[u8; 32]) -> (CryptoManager, CryptoManager) {
+        let mut sender = CryptoManager::new(key).unwrap();
+        sender.key_chain = Some(KeyChain::derive_from_chain(key, salt).unwrap());
+
+        let mut receiver = CryptoManager::new(key).unwrap();
+        receiver.key_chain = Some(KeyChain::derive_from_chain(key, salt).unwrap());
+
+        (sender, receiver)
+    }
+
     #[test]
-    fn test_encrypt_decrypt_with_psk() {
-        let key = [42u8; 32];
-        let mut crypto = CryptoManager::new(&key).unwrap();
-        crypto.init_with_psk().unwrap();
+    fn test_synced_encrypt_decrypt() {
+        let (mut sender, mut receiver) = make_synced_pair(&[42u8; 32], &[99u8; 32]);
 
-        let plaintext = b"Hello, World!";
-        let encrypted = crypto.encrypt(plaintext).unwrap();
+        let plaintext = b"secret command payload";
+        let encrypted = sender.encrypt(plaintext).unwrap();
+        let decrypted = receiver.decrypt(&encrypted).unwrap();
+        assert_eq!(plaintext.to_vec(), decrypted);
 
-        // Need a second instance with same state for decrypt
-        // In real use, server and agent ratchet in sync
-        let mut crypto2 = CryptoManager::new(&key).unwrap();
-        crypto2.init_with_psk().unwrap();
+        let plaintext2 = b"another secret";
+        let encrypted2 = sender.encrypt(plaintext2).unwrap();
+        let decrypted2 = receiver.decrypt(&encrypted2).unwrap();
+        assert_eq!(plaintext2.to_vec(), decrypted2);
+    }
 
-        // This won't work because salt is random - that's by design
-        // In production, salt is exchanged during handshake
+    #[test]
+    fn test_cipher_rotation_happens() {
+        let (mut sender, mut receiver) = make_synced_pair(&[42u8; 32], &[99u8; 32]);
+
+        let mut cipher_ids_seen = std::collections::HashSet::new();
+        let mut hmac_ids_seen = std::collections::HashSet::new();
+
+        for i in 0..20 {
+            let msg = format!("message {}", i);
+            let encrypted = sender.encrypt(msg.as_bytes()).unwrap();
+
+            // Extract cipher_id and hmac_id from wire format
+            cipher_ids_seen.insert(encrypted[1]);
+            hmac_ids_seen.insert(encrypted[2]);
+
+            let decrypted = receiver.decrypt(&encrypted).unwrap();
+            assert_eq!(msg.as_bytes(), &decrypted[..]);
+        }
+
+        assert!(cipher_ids_seen.len() > 1,
+            "Expected cipher rotation, only saw: {:?}", cipher_ids_seen);
+        assert!(hmac_ids_seen.len() > 1,
+            "Expected HMAC rotation, only saw: {:?}", hmac_ids_seen);
+    }
+
+    #[test]
+    fn test_wire_format_v3_header() {
+        let (mut sender, _) = make_synced_pair(&[42u8; 32], &[99u8; 32]);
+
+        let encrypted = sender.encrypt(b"test").unwrap();
+
+        assert_eq!(encrypted[0], 0x03, "Version byte should be 0x03");
+        assert!(encrypted[1] == CIPHER_AES_256_GCM || encrypted[1] == CIPHER_CHACHA20_POLY1305);
+        assert!(encrypted[2] == HMAC_SHA256 || encrypted[2] == HMAC_BLAKE3);
+    }
+
+    #[test]
+    fn test_replay_attack_fails() {
+        let (mut sender, mut receiver) = make_synced_pair(&[42u8; 32], &[99u8; 32]);
+
+        let encrypted = sender.encrypt(b"msg1").unwrap();
+        let _ = receiver.decrypt(&encrypted).unwrap();
+
+        let result = receiver.decrypt(&encrypted);
+        assert!(result.is_err());
     }
 
     #[test]
     fn test_key_ratchet_produces_different_keys() {
-        let key = [42u8; 32];
-        let salt = [1u8; 32];
-        let mut chain = KeyChain::derive_from_chain(&key, &salt).unwrap();
+        let mut chain = KeyChain::derive_from_chain(&[42u8; 32], &[1u8; 32]).unwrap();
 
         let enc1 = chain.enc_key;
         chain.ratchet().unwrap();
@@ -268,9 +453,7 @@ mod tests {
 
     #[test]
     fn test_nonce_derivation_unique() {
-        let key = [42u8; 32];
-        let salt = [1u8; 32];
-        let mut chain = KeyChain::derive_from_chain(&key, &salt).unwrap();
+        let mut chain = KeyChain::derive_from_chain(&[42u8; 32], &[1u8; 32]).unwrap();
 
         let n1 = chain.derive_nonce();
         chain.ratchet().unwrap();
@@ -290,51 +473,41 @@ mod tests {
 
         agent.complete_key_exchange(agent_secret, &server_payload).unwrap();
         server.complete_key_exchange(server_secret, &agent_payload).unwrap();
-
-        // Both have initialized key chains (different session keys though,
-        // since ECDH is asymmetric - in production the server echoes its
-        // public key and uses the agent's)
     }
 
     #[test]
-    fn test_synced_encrypt_decrypt() {
+    fn test_encrypt_decrypt_with_psk() {
         let key = [42u8; 32];
-        let salt = [99u8; 32];
+        let mut crypto = CryptoManager::new(&key).unwrap();
+        crypto.init_with_psk().unwrap();
 
-        let mut sender = CryptoManager::new(&key).unwrap();
-        sender.key_chain = Some(KeyChain::derive_from_chain(&key, &salt).unwrap());
-
-        let mut receiver = CryptoManager::new(&key).unwrap();
-        receiver.key_chain = Some(KeyChain::derive_from_chain(&key, &salt).unwrap());
-
-        let plaintext = b"secret command payload";
-        let encrypted = sender.encrypt(plaintext).unwrap();
-        let decrypted = receiver.decrypt(&encrypted).unwrap();
-
-        assert_eq!(plaintext.to_vec(), decrypted);
-
-        // Second message also works (both ratcheted)
-        let plaintext2 = b"another secret";
-        let encrypted2 = sender.encrypt(plaintext2).unwrap();
-        let decrypted2 = receiver.decrypt(&encrypted2).unwrap();
-        assert_eq!(plaintext2.to_vec(), decrypted2);
+        let encrypted = crypto.encrypt(b"Hello, World!").unwrap();
+        assert!(encrypted.len() > 71);
+        assert_eq!(encrypted[0], 0x03);
     }
 
     #[test]
-    fn test_replay_attack_fails() {
-        let key = [42u8; 32];
-        let salt = [99u8; 32];
+    fn test_many_messages_all_decrypt() {
+        let (mut sender, mut receiver) = make_synced_pair(&[42u8; 32], &[99u8; 32]);
 
-        let mut sender = CryptoManager::new(&key).unwrap();
-        sender.key_chain = Some(KeyChain::derive_from_chain(&key, &salt).unwrap());
+        for i in 0..50 {
+            let msg = format!("message number {} with some data to encrypt", i);
+            let encrypted = sender.encrypt(msg.as_bytes()).unwrap();
+            let decrypted = receiver.decrypt(&encrypted).unwrap();
+            assert_eq!(msg.as_bytes(), &decrypted[..], "Failed at message {}", i);
+        }
+    }
 
-        let mut receiver = CryptoManager::new(&key).unwrap();
-        receiver.key_chain = Some(KeyChain::derive_from_chain(&key, &salt).unwrap());
+    #[test]
+    fn test_tampered_message_rejected() {
+        let (mut sender, mut receiver) = make_synced_pair(&[42u8; 32], &[99u8; 32]);
 
-        let encrypted = sender.encrypt(b"msg1").unwrap();
-        let _ = receiver.decrypt(&encrypted).unwrap();
+        let mut encrypted = sender.encrypt(b"important data").unwrap();
 
-        // Replay the same message - should fail because receiver ratcheted
+        // Flip a byte in the ciphertext area
+        let mid = encrypted.len() / 2;
+        encrypted[mid] ^= 0xFF;
+
         let result = receiver.decrypt(&encrypted);
         assert!(result.is_err());
     }
