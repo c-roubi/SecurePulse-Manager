@@ -11,6 +11,7 @@ const Sidebar = () => {
     { path: '/files', label: '🗂️  File Manager', icon: '🗂️' },
     { path: '/remote-access', label: '🖥️  Remote Desktop', icon: '🖥️' },
     { path: '/keylogger', label: '🔐 Keylogger', icon: '🔐' },
+    { path: '/password-manager', label: '🔑 Password Manager', icon: '🔑' },
   ]
 
   const isActive = (path: string) => {
@@ -19,6 +20,9 @@ const Sidebar = () => {
     }
     if (path === '/remote-access') {
       return location.pathname.startsWith('/remote-access')
+    }
+    if (path === '/password-manager') {
+      return location.pathname.startsWith('/password-manager')
     }
     return location.pathname === path || (path === '/dashboard' && location.pathname === '/')
   }

