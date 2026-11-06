@@ -30,7 +30,11 @@ async def login(
             data={"sub": "admin"},
             expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         )
-        return TokenResponse(access_token=access_token, token_type="bearer")
+        return TokenResponse(
+            access_token=access_token,
+            token_type="bearer",
+            expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        )
 
     # Query user
     result = await session.execute(
@@ -64,6 +68,7 @@ async def login(
 
     return TokenResponse(
         access_token=access_token,
+        token_type="bearer",
         expires_in=ACCESS_TOKEN_EXPIRE_MINUTES * 60
     )
 
