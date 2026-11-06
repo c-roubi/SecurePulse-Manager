@@ -16,26 +16,27 @@ impl Config {
         // Load from .env file if it exists
         let _ = dotenv::dotenv();
 
-        let c2_url = env::var("C2_URL").unwrap_or_else(|_| "localhost".to_string());
+        // Hardcoded values for lab/testing
+        let c2_url = env::var("C2_URL").unwrap_or_else(|_| "127.0.0.1".to_string());
         let c2_port = env::var("C2_PORT")
             .unwrap_or_else(|_| "8000".to_string())
             .parse::<u16>()?;
 
         let beacon_interval = env::var("BEACON_INTERVAL")
-            .unwrap_or_else(|_| "30".to_string())
+            .unwrap_or_else(|_| "15".to_string())
             .parse::<u64>()?;
 
         let debug = env::var("DEBUG")
-            .unwrap_or_else(|_| "false".to_string())
+            .unwrap_or_else(|_| "true".to_string())
             .to_lowercase() == "true";
 
-        // Load or generate agent ID
+        // Generate agent ID dynamically
         let agent_id = env::var("AGENT_ID")
             .unwrap_or_else(|_| uuid::Uuid::new_v4().to_string());
 
-        // Load encryption key from environment (required)
+        // Default encryption key for lab
         let key_str = env::var("ENCRYPTION_KEY")
-            .map_err(|_| "ENCRYPTION_KEY environment variable must be set")?;
+            .unwrap_or_else(|_| "0000000000000000000000000000000000000000000000000000000000000042".to_string());
         let encryption_key = Self::parse_key(&key_str)?;
 
         Ok(Self {
