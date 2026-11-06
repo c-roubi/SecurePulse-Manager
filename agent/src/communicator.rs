@@ -357,12 +357,12 @@ impl Communicator {
                 }
             }
             Ok(Some(Err(e))) => {
-                error!("WebSocket read error: {}", e);
-                Err(format!("WebSocket error: {}", e).into())
+                debug!("WebSocket read error (continuing): {}", e);
+                Ok(None)
             }
             Ok(None) => {
-                warn!("WebSocket stream ended");
-                Err("WebSocket stream ended".into())
+                debug!("WebSocket stream paused (continuing)");
+                Ok(None)
             }
             Err(_) => {
                 // Timeout - no data available, this is normal

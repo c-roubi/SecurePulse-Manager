@@ -188,8 +188,8 @@ async fn run_agent(
                             debug!("No commands received");
                         }
                         Err(e) => {
-                            error!("Error receiving command: {}", e);
-                            break;
+                            debug!("No command or timeout: {}", e);
+                            // Don't break - just continue waiting for next beacon
                         }
                     }
 
