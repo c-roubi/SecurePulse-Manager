@@ -10,16 +10,31 @@ interface Stats {
   completed_commands: number
 }
 
+interface LiveAgent {
+  agent_id: string
+  hostname?: string
+  os?: string
+  user?: string
+  encryption?: string
+  last_envelope_version?: number
+  last_message_index?: number
+}
+
 const Dashboard = () => {
   const [stats, setStats] = useState<Stats | null>(null)
+  const [liveAgents, setLiveAgents] = useState<LiveAgent[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const loadDashboardData = async () => {
+    const loadData = async () => {
       try {
-        const data = await apiClient.getDashboardStats()
-        setStats(data.stats)
+        const [dashData, liveData] = await Promise.all([
+          apiClient.getDashboardStats().catch(() => null),
+          fetch('http://localhost:8000/api/live/agents').then(r => r.json()).catch(() => ({ agents: [] })),
+        ])
+        if (dashData) setStats(dashData.stats)
+        setLiveAgents(liveData.agents || [])
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load dashboard')
       } finally {
@@ -27,9 +42,8 @@ const Dashboard = () => {
       }
     }
 
-    loadDashboardData()
-    const interval = setInterval(loadDashboardData, 5000) // Refresh every 5s
-
+    loadData()
+    const interval = setInterval(loadData, 3000)
     return () => clearInterval(interval)
   }, [])
 
@@ -52,6 +66,8 @@ const Dashboard = () => {
     )
   }
 
+  const liveCount = liveAgents.length
+
   const StatCard = ({ title, value, icon, color }: { title: string; value: number; icon: string; color: string }) => (
     <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 hover:border-blue-500 transition-colors">
       <div className="flex items-center justify-between">
@@ -68,23 +84,22 @@ const Dashboard = () => {
     <div className="space-y-6">
       <h1 className="text-3xl font-bold text-white">Dashboard</h1>
 
-      {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <StatCard
           title="Total Agents"
-          value={stats?.total_agents || 0}
+          value={Math.max(stats?.total_agents || 0, liveCount)}
           icon="🖥️"
           color="text-blue-400"
         />
         <StatCard
           title="Active Agents"
-          value={stats?.active_agents || 0}
+          value={liveCount}
           icon="✅"
-          color="text-green-400"
+          color={liveCount > 0 ? "text-green-400" : "text-red-400"}
         />
         <StatCard
           title="Active Sessions"
-          value={stats?.active_sessions || 0}
+          value={Math.max(stats?.active_sessions || 0, liveCount)}
           icon="🔗"
           color="text-purple-400"
         />
@@ -112,7 +127,39 @@ const Dashboard = () => {
         />
       </div>
 
-      {/* Recent Activity */}
+      {/* Live Agents */}
+      <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
+        <h2 className="text-xl font-bold text-white mb-4">🟢 Live Connected Agents ({liveCount})</h2>
+        {liveCount === 0 ? (
+          <p className="text-gray-400">No agents currently connected. Run agent.exe to connect.</p>
+        ) : (
+          <div className="space-y-3">
+            {liveAgents.map((agent) => (
+              <div key={agent.agent_id} className="flex items-center justify-between p-4 bg-gray-700 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                  <div>
+                    <p className="text-white font-mono text-sm">{agent.agent_id}</p>
+                    <p className="text-gray-400 text-xs">
+                      {agent.hostname || 'Unknown'} | {agent.os || 'Unknown OS'} | {agent.user || 'Unknown user'}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="px-2 py-1 bg-green-900 text-green-200 rounded text-xs font-medium">
+                    {agent.encryption || 'connected'}
+                  </span>
+                  {agent.last_message_index !== undefined && (
+                    <p className="text-gray-400 text-xs mt-1">msgs: {agent.last_message_index}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* System Status */}
       <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
         <h2 className="text-xl font-bold text-white mb-4">📡 System Status</h2>
         <div className="space-y-3">
@@ -124,38 +171,14 @@ const Dashboard = () => {
             </span>
           </div>
           <div className="flex items-center justify-between p-3 bg-gray-700 rounded">
-            <span className="text-gray-300">Database Status</span>
+            <span className="text-gray-300">WebSocket</span>
             <span className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-              <span className="text-green-400">Connected</span>
+              <div className={`w-2 h-2 rounded-full ${liveCount > 0 ? 'bg-green-500' : 'bg-yellow-500'}`}></div>
+              <span className={liveCount > 0 ? 'text-green-400' : 'text-yellow-400'}>
+                {liveCount > 0 ? `${liveCount} agent(s) connected` : 'Waiting for agents'}
+              </span>
             </span>
           </div>
-          <div className="flex items-center justify-between p-3 bg-gray-700 rounded">
-            <span className="text-gray-300">API Status</span>
-            <span className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-              <span className="text-green-400">Responding</span>
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Quick Actions */}
-      <div className="bg-gray-800 rounded-lg p-6 border border-gray-700">
-        <h2 className="text-xl font-bold text-white mb-4">⚡ Quick Actions</h2>
-        <div className="flex gap-4 flex-wrap">
-          <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors">
-            🔗 New Session
-          </button>
-          <button className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded transition-colors">
-            ⌨️ Execute Command
-          </button>
-          <button className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded transition-colors">
-            📊 View Reports
-          </button>
-          <button className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded transition-colors">
-            ⚠️ Show Alerts
-          </button>
         </div>
       </div>
     </div>

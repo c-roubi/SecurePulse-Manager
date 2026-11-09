@@ -7,6 +7,7 @@ from app.database import get_session
 from app.models import Agent, Session, Command, DetectionEvent, AgentStatus, CommandStatus, Severity
 from app.schemas import DashboardStats, DashboardResponse, DetectionEventResponse
 from app.security import get_current_user
+from app.agent_manager import agent_manager
 from datetime import datetime, timedelta
 from typing import List
 
@@ -18,15 +19,15 @@ async def get_dashboard(
     username: str = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
-    """Get dashboard statistics"""
-    # Count agents
-    total_agents = await db.execute(select(func.count(Agent.id)))
-    total_agents = total_agents.scalar() or 0
+    """Get dashboard statistics - includes live WebSocket agents"""
+    live_count = len(agent_manager.active_connections)
 
-    active_agents = await db.execute(
-        select(func.count(Agent.id)).where(Agent.status == AgentStatus.ACTIVE)
-    )
-    active_agents = active_agents.scalar() or 0
+    # Count agents from DB
+    total_agents_db = await db.execute(select(func.count(Agent.id)))
+    total_agents_db = total_agents_db.scalar() or 0
+
+    total_agents = max(total_agents_db, live_count)
+    active_agents = live_count
 
     # Count sessions
     total_sessions = await db.execute(select(func.count(Session.id)))
@@ -36,6 +37,7 @@ async def get_dashboard(
         select(func.count(Session.id)).where(Session.status == "ACTIVE")
     )
     active_sessions = active_sessions.scalar() or 0
+    active_sessions = max(active_sessions, live_count)
 
     # Count commands
     total_commands = await db.execute(select(func.count(Command.id)))
