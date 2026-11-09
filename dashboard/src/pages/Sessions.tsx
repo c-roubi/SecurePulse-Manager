@@ -25,7 +25,14 @@ const Sessions = () => {
       try {
         const res = await fetch('/api/live/agents')
         const data = await res.json()
-        setAgents(data.agents || [])
+        const agentsObj = data.agents || {}
+        if (typeof agentsObj === 'object' && !Array.isArray(agentsObj)) {
+          setAgents(Object.keys(agentsObj).map(id => ({ agent_id: id, ...agentsObj[id] })))
+        } else if (Array.isArray(agentsObj)) {
+          setAgents(agentsObj)
+        } else {
+          setAgents([])
+        }
       } catch (err) {
         console.error('Failed to load agents:', err)
       } finally {
