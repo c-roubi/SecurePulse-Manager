@@ -29,17 +29,14 @@ const Dashboard = () => {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [dashData, liveData] = await Promise.all([
-          apiClient.getDashboardStats().catch(() => null),
-          fetch('http://localhost:8000/api/live/agents').then(r => r.json()).catch(() => ({ agents: [] })),
-        ])
-        if (dashData) setStats(dashData.stats)
+        const liveData = await fetch('http://localhost:8000/api/live/agents').then(r => r.json()).catch(() => ({ agents: [], total: 0 }))
         setLiveAgents(liveData.agents || [])
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load dashboard')
-      } finally {
-        setLoading(false)
-      }
+      } catch {}
+      try {
+        const dashData = await apiClient.getDashboardStats()
+        setStats(dashData.stats)
+      } catch {}
+      setLoading(false)
     }
 
     loadData()
@@ -58,7 +55,7 @@ const Dashboard = () => {
     )
   }
 
-  if (error) {
+  if (error && !liveAgents.length) {
     return (
       <div className="p-4 bg-red-900 border border-red-700 rounded text-red-100">
         {error}
