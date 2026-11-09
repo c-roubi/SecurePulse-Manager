@@ -120,7 +120,13 @@ async def api_status():
 async def websocket_agent_endpoint(websocket: WebSocket, agent_id: str):
     """WebSocket endpoint for agent communication"""
     await agent_manager.connect(agent_id, websocket)
-    logger.info(f"Agent {agent_id} connected via WebSocket")
+
+    # Capture client IP
+    client_ip = "unknown"
+    if websocket.client:
+        client_ip = websocket.client.host
+    agent_manager.update_agent_info(agent_id, {"ip_address": client_ip})
+    logger.info(f"Agent {agent_id} connected via WebSocket from {client_ip}")
 
     try:
         while True:
@@ -142,6 +148,37 @@ async def websocket_agent_endpoint(websocket: WebSocket, agent_id: str):
                         f"idx={envelope.get('idx')}, data_size={len(envelope.get('data', ''))}"
                     )
                 elif "msg_type" in envelope:
+                    msg_type = envelope.get("msg_type", "unknown")
+                    # Handle REGISTER message with system info
+                    if msg_type == "REGISTER":
+                        agent_manager.update_agent_info(agent_id, {
+                            "hostname": envelope.get("hostname"),
+                            "os": envelope.get("os"),
+                            "os_version": envelope.get("os_version"),
+                            "architecture": envelope.get("architecture"),
+                            "user": envelope.get("user"),
+                        })
+                        logger.info(
+                            f"Agent {agent_id} registered: "
+                            f"{envelope.get('hostname')} | {envelope.get('os')} | "
+                            f"{envelope.get('user')} | {client_ip}"
+                        )
+                        # GeoIP lookup in background
+                        async def do_geoip(aid, ip):
+                            from app.agent_manager import lookup_geoip
+                            geo = await lookup_geoip(ip)
+                            if geo:
+                                agent_manager.update_agent_info(aid, {
+                                    "country": geo.get("country", ""),
+                                    "city": geo.get("city", ""),
+                                    "isp": geo.get("isp", ""),
+                                })
+                        import asyncio
+                        asyncio.create_task(do_geoip(agent_id, client_ip))
+                        # Send ACK and continue
+                        ack = {"type": "ack", "status": "registered", "timestamp": datetime.utcnow().isoformat()}
+                        await websocket.send_text(json.dumps(ack))
+                        continue
                     # Plaintext message (debug mode)
                     msg_type = envelope.get("msg_type", "unknown")
                     agent_manager.update_agent_info(agent_id, {

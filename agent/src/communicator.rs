@@ -204,6 +204,10 @@ impl Communicator {
         Ok(())
     }
 
+    pub async fn send_raw(&self, text: &str) -> Result<(), Box<dyn std::error::Error>> {
+        self.ws_send(text).await
+    }
+
     async fn ws_send(&self, text: &str) -> Result<(), Box<dyn std::error::Error>> {
         let mut sink_guard = self.ws_sink.write().await;
         let sink = sink_guard.as_mut()

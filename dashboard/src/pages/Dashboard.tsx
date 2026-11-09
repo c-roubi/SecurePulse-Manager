@@ -7,6 +7,10 @@ interface AgentInfo {
   os_version?: string
   user?: string
   encryption?: string
+  ip_address?: string
+  country?: string
+  city?: string
+  isp?: string
   last_envelope_version?: number
   last_message_index?: number
   pending_commands?: number
@@ -98,7 +102,7 @@ const Dashboard = () => {
                     <div>
                       <p className="text-white font-mono text-sm">{agent.agent_id}</p>
                       <p className="text-gray-400 text-xs">
-                        {agent.hostname || 'Unknown'} | {agent.os || 'Unknown OS'} | {agent.user || 'N/A'}
+                        {agent.user || 'N/A'}@{agent.hostname || '?'} | {agent.os || '?'} | {agent.ip_address || '?'}{agent.country ? ` (${agent.country})` : ''}
                       </p>
                     </div>
                   </div>

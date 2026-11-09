@@ -4,8 +4,22 @@ from fastapi import WebSocket
 from datetime import datetime
 from typing import Dict, List
 import logging
+import asyncio
+import httpx
 
 logger = logging.getLogger(__name__)
+
+
+async def lookup_geoip(ip: str) -> dict:
+    """Lookup country/city from IP using free API"""
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            resp = await client.get(f"http://ip-api.com/json/{ip}?fields=country,city,isp")
+            if resp.status_code == 200:
+                return resp.json()
+    except Exception:
+        pass
+    return {}
 
 
 class AgentConnectionManager:
