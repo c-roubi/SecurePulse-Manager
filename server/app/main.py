@@ -347,6 +347,15 @@ async def send_command_to_agent(agent_id: str, command: dict = Body(...)):
     }
 
 
+@app.get("/api/live/agents/{agent_id}/commands/{cmd_id}")
+async def get_command_result(agent_id: str, cmd_id: int):
+    """Get a specific command result by cmd_id"""
+    for entry in agent_manager.get_command_history(agent_id):
+        if entry.get("cmd_id") == cmd_id:
+            return entry
+    return JSONResponse(status_code=404, content={"detail": "Command not found"})
+
+
 @app.get("/api/live/agents/{agent_id}/beacons")
 async def get_agent_beacons(agent_id: str):
     """Get beacon history for an agent"""
