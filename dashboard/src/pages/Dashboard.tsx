@@ -1,14 +1,4 @@
 import { useState, useEffect } from 'react'
-import { apiClient } from '../services/api'
-
-interface Stats {
-  total_agents: number
-  active_agents: number
-  total_sessions: number
-  active_sessions: number
-  total_commands: number
-  completed_commands: number
-}
 
 interface LiveAgent {
   agent_id: string
@@ -21,21 +11,18 @@ interface LiveAgent {
 }
 
 const Dashboard = () => {
-  const [stats, setStats] = useState<Stats | null>(null)
   const [liveAgents, setLiveAgents] = useState<LiveAgent[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const liveData = await fetch('http://localhost:8000/api/live/agents').then(r => r.json()).catch(() => ({ agents: [], total: 0 }))
-        setLiveAgents(liveData.agents || [])
-      } catch {}
-      try {
-        const dashData = await apiClient.getDashboardStats()
-        setStats(dashData.stats)
-      } catch {}
+        const res = await fetch('http://localhost:8000/api/live/agents')
+        const data = await res.json()
+        setLiveAgents(data.agents || [])
+      } catch {
+        setLiveAgents([])
+      }
       setLoading(false)
     }
 
@@ -51,14 +38,6 @@ const Dashboard = () => {
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
           <p className="text-gray-400">Loading dashboard...</p>
         </div>
-      </div>
-    )
-  }
-
-  if (error && !liveAgents.length) {
-    return (
-      <div className="p-4 bg-red-900 border border-red-700 rounded text-red-100">
-        {error}
       </div>
     )
   }
@@ -84,7 +63,7 @@ const Dashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         <StatCard
           title="Total Agents"
-          value={Math.max(stats?.total_agents || 0, liveCount)}
+          value={liveCount}
           icon="🖥️"
           color="text-blue-400"
         />
@@ -96,31 +75,9 @@ const Dashboard = () => {
         />
         <StatCard
           title="Active Sessions"
-          value={Math.max(stats?.active_sessions || 0, liveCount)}
+          value={liveCount}
           icon="🔗"
           color="text-purple-400"
-        />
-        <StatCard
-          title="Total Commands"
-          value={stats?.total_commands || 0}
-          icon="⌨️"
-          color="text-yellow-400"
-        />
-        <StatCard
-          title="Completed Commands"
-          value={stats?.completed_commands || 0}
-          icon="✔️"
-          color="text-green-400"
-        />
-        <StatCard
-          title="Success Rate"
-          value={
-            stats && stats.total_commands > 0
-              ? Math.round((stats.completed_commands / stats.total_commands) * 100)
-              : 0
-          }
-          icon="📊"
-          color="text-cyan-400"
         />
       </div>
 
