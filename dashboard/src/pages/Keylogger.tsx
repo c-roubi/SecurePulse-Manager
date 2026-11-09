@@ -26,7 +26,14 @@ export default function Keylogger() {
     try {
       const response = await fetch('/api/live/agents');
       const data = await response.json();
-      setAgents(data.agents || []);
+      const agentsObj = data.agents || {};
+      if (typeof agentsObj === 'object' && !Array.isArray(agentsObj)) {
+        setAgents(Object.keys(agentsObj).map(id => ({ id, ...agentsObj[id] })));
+      } else if (Array.isArray(agentsObj)) {
+        setAgents(agentsObj);
+      } else {
+        setAgents([]);
+      }
     } catch (error) {
       console.error('Error fetching agents:', error);
     }

@@ -31,9 +31,16 @@ export default function PasswordManager() {
     try {
       const response = await fetch('/api/live/agents');
       const data = await response.json();
-      setAgents(data.agents || []);
-      if (data.agents?.length > 0) {
-        setSelectedAgent(data.agents[0].id);
+      const agentsObj = data.agents || {};
+      let agentsList: any[] = [];
+      if (typeof agentsObj === 'object' && !Array.isArray(agentsObj)) {
+        agentsList = Object.keys(agentsObj).map(id => ({ id, ...agentsObj[id] }));
+      } else if (Array.isArray(agentsObj)) {
+        agentsList = agentsObj;
+      }
+      setAgents(agentsList);
+      if (agentsList.length > 0) {
+        setSelectedAgent(agentsList[0].id);
       }
     } catch (error) {
       console.error('Failed to load agents:', error);
