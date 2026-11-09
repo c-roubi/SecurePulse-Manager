@@ -17,7 +17,7 @@ const Dashboard = () => {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const res = await fetch('http://localhost:8000/api/live/agents')
+        const res = await fetch('/api/live/agents')
         const data = await res.json()
         setLiveAgents(data.agents || [])
       } catch {

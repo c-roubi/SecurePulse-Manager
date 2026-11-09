@@ -29,7 +29,7 @@ export default function PasswordManager() {
 
   const loadAgents = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/live/agents');
+      const response = await fetch('/api/live/agents');
       const data = await response.json();
       setAgents(data.agents || []);
       if (data.agents?.length > 0) {
@@ -48,7 +48,7 @@ export default function PasswordManager() {
 
     setLoading(true);
     try {
-      const endpoint = `http://localhost:8000/api/credentials/extract/${extractionType}/${selectedAgent}`;
+      const endpoint = `/api/credentials/extract/${extractionType}/${selectedAgent}`;
       const response = await fetch(endpoint, { method: 'POST' });
       const data = await response.json();
 

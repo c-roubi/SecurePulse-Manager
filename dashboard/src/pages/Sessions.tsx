@@ -23,7 +23,7 @@ const Sessions = () => {
   useEffect(() => {
     const loadAgents = async () => {
       try {
-        const res = await fetch('http://localhost:8000/api/live/agents')
+        const res = await fetch('/api/live/agents')
         const data = await res.json()
         setAgents(data.agents || [])
       } catch (err) {
@@ -42,7 +42,7 @@ const Sessions = () => {
     if (!selectedAgent) { setAgentDetail(null); return }
     const loadDetail = async () => {
       try {
-        const res = await fetch(`http://localhost:8000/api/live/agents/${selectedAgent}`)
+        const res = await fetch(`/api/live/agents/${selectedAgent}`)
         if (res.ok) setAgentDetail(await res.json())
       } catch {}
     }
