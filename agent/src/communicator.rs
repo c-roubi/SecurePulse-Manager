@@ -186,6 +186,7 @@ impl Communicator {
         let mut attempts = self.reconnect_attempts.write().await;
 
         if *attempts >= self.max_reconnect_attempts {
+            *attempts = 0;
             return Err("Max reconnection attempts reached".into());
         }
 
@@ -357,12 +358,12 @@ impl Communicator {
                 }
             }
             Ok(Some(Err(e))) => {
-                debug!("WebSocket read error (continuing): {}", e);
-                Ok(None)
+                error!("WebSocket read error: {}", e);
+                Err(format!("WebSocket read error: {}", e).into())
             }
             Ok(None) => {
-                debug!("WebSocket stream paused (continuing)");
-                Ok(None)
+                warn!("WebSocket stream ended (server closed connection)");
+                Err("WebSocket stream ended".into())
             }
             Err(_) => {
                 // Timeout - no data available, this is normal
