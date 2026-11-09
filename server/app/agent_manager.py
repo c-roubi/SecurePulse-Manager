@@ -28,6 +28,8 @@ class AgentConnectionManager:
         self.agent_info: Dict[str, dict] = {}
         self.command_queues: Dict[str, List[dict]] = {}
         self.beacon_log: Dict[str, List[dict]] = {}
+        self.command_history: Dict[str, List[dict]] = {}
+        self._cmd_counter = 0
 
     async def connect(self, agent_id: str, websocket: WebSocket):
         await websocket.accept()
@@ -59,14 +61,27 @@ class AgentConnectionManager:
             result[agent_id] = info
         return result
 
-    def queue_command(self, agent_id: str, command: dict):
+    def queue_command(self, agent_id: str, command: dict) -> int:
         if agent_id not in self.command_queues:
             self.command_queues[agent_id] = []
-        self.command_queues[agent_id].append({
+        if agent_id not in self.command_history:
+            self.command_history[agent_id] = []
+        self._cmd_counter += 1
+        cmd_id = self._cmd_counter
+        entry = {
+            "cmd_id": cmd_id,
             "command": command,
             "queued_at": datetime.utcnow().isoformat(),
-        })
-        logger.info(f"Command queued for agent {agent_id} (queue size: {len(self.command_queues[agent_id])})")
+            "status": "queued",
+            "output": None,
+            "error": None,
+        }
+        self.command_queues[agent_id].append(entry)
+        self.command_history[agent_id].append(entry)
+        if len(self.command_history[agent_id]) > 200:
+            self.command_history[agent_id] = self.command_history[agent_id][-200:]
+        logger.info(f"Command queued for agent {agent_id} (id={cmd_id}, queue size: {len(self.command_queues[agent_id])})")
+        return cmd_id
 
     def get_pending_commands(self, agent_id: str) -> List[dict]:
         commands = self.command_queues.get(agent_id, [])
@@ -90,6 +105,18 @@ class AgentConnectionManager:
         })
         if len(self.beacon_log[agent_id]) > 100:
             self.beacon_log[agent_id] = self.beacon_log[agent_id][-100:]
+
+    def store_command_result(self, agent_id: str, cmd_id: int, status: str, output: str, error: str = None):
+        for entry in self.command_history.get(agent_id, []):
+            if entry["cmd_id"] == cmd_id:
+                entry["status"] = status
+                entry["output"] = output
+                entry["error"] = error
+                entry["completed_at"] = datetime.utcnow().isoformat()
+                break
+
+    def get_command_history(self, agent_id: str) -> List[dict]:
+        return self.command_history.get(agent_id, [])[-50:]
 
     def is_connected(self, agent_id: str) -> bool:
         return agent_id in self.active_connections

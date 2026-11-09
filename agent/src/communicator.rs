@@ -58,6 +58,7 @@ struct ServerMessage {
     #[serde(rename = "type")]
     msg_type: String,
     data: Option<serde_json::Value>,
+    cmd_id: Option<u64>,
 }
 
 #[allow(dead_code)]
@@ -388,8 +389,12 @@ impl Communicator {
             match server_msg.msg_type.as_str() {
                 "command" => {
                     if let Some(data) = server_msg.data {
-                        let cmd_str = serde_json::to_string(&data)?;
-                        info!("Received command from server");
+                        let wrapper = serde_json::json!({
+                            "cmd_id": server_msg.cmd_id.unwrap_or(0),
+                            "cmd": data,
+                        });
+                        let cmd_str = serde_json::to_string(&wrapper)?;
+                        info!("Received command from server (cmd_id={})", server_msg.cmd_id.unwrap_or(0));
                         return Ok(Some(cmd_str));
                     }
                 }

