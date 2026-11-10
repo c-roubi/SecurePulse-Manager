@@ -239,17 +239,37 @@ impl Executor {
     async fn list_dir(path: &str) -> CommandResult {
         match std::fs::read_dir(path) {
             Ok(entries) => {
-                let mut output = String::new();
-                for entry in entries {
-                    if let Ok(entry) = entry {
-                        let path = entry.path();
-                        output.push_str(&format!("{}\n", path.display()));
-                    }
+                let mut items: Vec<serde_json::Value> = Vec::new();
+                for entry in entries.flatten() {
+                    let meta = entry.metadata().ok();
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
+                    let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+                    let modified = meta.as_ref()
+                        .and_then(|m| m.modified().ok())
+                        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    items.push(serde_json::json!({
+                        "name": name,
+                        "path": entry.path().to_string_lossy(),
+                        "is_dir": is_dir,
+                        "size": size,
+                        "modified": modified,
+                    }));
                 }
+                items.sort_by(|a, b| {
+                    let a_dir = a["is_dir"].as_bool().unwrap_or(false);
+                    let b_dir = b["is_dir"].as_bool().unwrap_or(false);
+                    b_dir.cmp(&a_dir).then_with(|| {
+                        a["name"].as_str().unwrap_or("").to_lowercase()
+                            .cmp(&b["name"].as_str().unwrap_or("").to_lowercase())
+                    })
+                });
                 CommandResult {
                     command_type: "ls".to_string(),
                     status: "success".to_string(),
-                    output,
+                    output: serde_json::to_string(&items).unwrap_or_default(),
                     error: None,
                     execution_time_ms: 0,
                 }
