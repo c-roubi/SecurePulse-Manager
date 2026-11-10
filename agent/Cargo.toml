@@ -72,6 +72,10 @@ anyhow = "1.0"
 sysinfo = "0.29"
 whoami = "1.4"
 
+# Windows API
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["winuser", "windef", "libloaderapi", "processthreadsapi", "psapi", "minwindef", "errhandlingapi"] }
+
 [dev-dependencies]
 tokio-test = "0.4"
 mockall = "0.12"

