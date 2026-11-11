@@ -11,6 +11,8 @@ pub mod credentials;
 pub mod antisandbox;
 pub mod injection;
 pub mod evasion;
+pub mod http_channel;
+pub mod lateral;
 #[allow(dead_code, unused_imports, unused_variables, unused_mut)]
 pub mod network;
 #[allow(dead_code, unused_imports, unused_variables, unused_mut)]

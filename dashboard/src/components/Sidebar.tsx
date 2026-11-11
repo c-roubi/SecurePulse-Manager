@@ -16,6 +16,7 @@ const Sidebar = () => {
     { path: '/persistence', label: '🔄 Persistence', icon: '🔄' },
     { path: '/clipboard', label: '📋 Clipboard', icon: '📋' },
     { path: '/system-info', label: '🖥️  System Intel', icon: '🖥️' },
+    { path: '/lateral', label: '🌐 Lateral Movement', icon: '🌐' },
   ]
 
   const isActive = (path: string) => {

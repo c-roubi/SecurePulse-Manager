@@ -14,6 +14,7 @@ import ProcessManager from './pages/ProcessManager'
 import Persistence from './pages/Persistence'
 import ClipboardMonitor from './pages/ClipboardMonitor'
 import SystemInfo from './pages/SystemInfo'
+import LateralMovement from './pages/LateralMovement'
 import Layout from './components/Layout'
 import PrivateRoute from './components/PrivateRoute'
 
@@ -61,6 +62,7 @@ function App() {
             <Route path="/persistence" element={<Persistence />} />
             <Route path="/clipboard" element={<ClipboardMonitor />} />
             <Route path="/system-info" element={<SystemInfo />} />
+            <Route path="/lateral" element={<LateralMovement />} />
           </Route>
         </Route>
 

