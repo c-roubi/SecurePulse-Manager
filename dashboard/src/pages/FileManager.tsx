@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 interface FileItem {
   name: string;
@@ -53,6 +53,12 @@ export default function FileManager({ agentId }: FileManagerProps) {
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [viewingFile, setViewingFile] = useState(false);
   const [message, setMessage] = useState('');
+  const [downloading, setDownloading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<FileItem[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const uploadRef = useRef<HTMLInputElement>(null);
 
   const sendCommand = useCallback(async (cmdType: string, extra: Record<string, any> = {}): Promise<any> => {
     const res = await fetch(`/api/live/agents/${agentId}/command`, {
@@ -63,12 +69,12 @@ export default function FileManager({ agentId }: FileManagerProps) {
     if (!res.ok) throw new Error('Failed to send command');
     const data = await res.json();
     const cmdId = data.cmd_id;
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 60; i++) {
       await new Promise(r => setTimeout(r, 500));
       const cmdRes = await fetch(`/api/live/agents/${agentId}/commands/${cmdId}`);
       if (!cmdRes.ok) continue;
       const cmd = await cmdRes.json();
-      if (cmd.status !== 'queued' && cmd.status !== 'sent') return cmd;
+      if (cmd.status !== 'queued' && cmd.status !== 'sent') return { ...cmd, _cmd_id: cmdId };
     }
     throw new Error('Timeout');
   }, [agentId]);
@@ -79,6 +85,8 @@ export default function FileManager({ agentId }: FileManagerProps) {
     setSelectedFile(null);
     setViewingFile(false);
     setFileContent(null);
+    setSearchResults(null);
+    setSearchQuery('');
     try {
       const result = await sendCommand('list_dir', { path });
       if (result.status === 'success' && result.output) {
@@ -108,7 +116,6 @@ export default function FileManager({ agentId }: FileManagerProps) {
   };
 
   const goUp = () => {
-    // Handle both Windows and Unix paths
     let parent = currentPath.replace(/[\\/]+$/, '');
     const lastSep = Math.max(parent.lastIndexOf('/'), parent.lastIndexOf('\\'));
     if (lastSep > 0) {
@@ -116,8 +123,7 @@ export default function FileManager({ agentId }: FileManagerProps) {
     } else if (lastSep === 0) {
       parent = '/';
     } else {
-      // Windows root like C:
-      parent = parent.substring(0, 3); // C:\
+      parent = parent.substring(0, 3);
     }
     navigate(parent);
   };
@@ -134,6 +140,90 @@ export default function FileManager({ agentId }: FileManagerProps) {
       }
     } catch (e) {
       setFileContent('Error: ' + (e as Error).message);
+    }
+  };
+
+  const downloadFile = async (item: FileItem) => {
+    setDownloading(true);
+    setMessage('Downloading ' + item.name + '...');
+    try {
+      const result = await sendCommand('download_file', { path: item.path });
+      if (result.status === 'success' && result.output) {
+        const parsed = JSON.parse(result.output);
+        const byteChars = atob(parsed.data);
+        const byteArray = new Uint8Array(byteChars.length);
+        for (let i = 0; i < byteChars.length; i++) {
+          byteArray[i] = byteChars.charCodeAt(i);
+        }
+        const blob = new Blob([byteArray], { type: 'application/octet-stream' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = parsed.filename || item.name;
+        a.click();
+        URL.revokeObjectURL(url);
+        setMessage('Downloaded: ' + item.name + ' (' + formatSize(parsed.size) + ')');
+      } else {
+        setMessage('Error: ' + (result.error || 'Download failed'));
+      }
+    } catch (e) {
+      setMessage('Error: ' + (e as Error).message);
+    }
+    setDownloading(false);
+  };
+
+  const uploadFile = async (file: File) => {
+    setUploading(true);
+    setMessage('Uploading ' + file.name + '...');
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const sep = currentPath.includes('\\') ? '\\' : '/';
+      formData.append('dest_path', currentPath + sep + file.name);
+
+      const res = await fetch(`/api/live/agents/${agentId}/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || 'Upload failed');
+      }
+      const data = await res.json();
+      // Poll for completion
+      const cmdId = data.cmd_id;
+      for (let i = 0; i < 60; i++) {
+        await new Promise(r => setTimeout(r, 500));
+        const cmdRes = await fetch(`/api/live/agents/${agentId}/commands/${cmdId}`);
+        if (!cmdRes.ok) continue;
+        const cmd = await cmdRes.json();
+        if (cmd.status === 'success') {
+          setMessage('Uploaded: ' + file.name + ' (' + formatSize(file.size) + ')');
+          navigate(currentPath);
+          setUploading(false);
+          return;
+        } else if (cmd.status === 'error') {
+          setMessage('Error: ' + (cmd.error || 'Upload failed on agent'));
+          setUploading(false);
+          return;
+        }
+      }
+      setMessage('Upload timed out');
+    } catch (e) {
+      setMessage('Error: ' + (e as Error).message);
+    }
+    setUploading(false);
+  };
+
+  const handleUploadClick = () => {
+    uploadRef.current?.click();
+  };
+
+  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      uploadFile(file);
+      e.target.value = '';
     }
   };
 
@@ -170,11 +260,30 @@ export default function FileManager({ agentId }: FileManagerProps) {
     }
   };
 
-  // Breadcrumb parts
+  const searchFiles = async () => {
+    if (!searchQuery.trim()) { setSearchResults(null); return; }
+    setSearching(true);
+    try {
+      const result = await sendCommand('search_files', { root: currentPath, pattern: searchQuery.trim(), max_depth: 5 });
+      if (result.status === 'success' && result.output) {
+        setSearchResults(JSON.parse(result.output));
+      } else {
+        setMessage('Error: ' + (result.error || 'Search failed'));
+      }
+    } catch (e) {
+      setMessage('Error: ' + (e as Error).message);
+    }
+    setSearching(false);
+  };
+
   const pathParts = currentPath.split(/[\\/]/).filter(Boolean);
+  const displayFiles = searchResults !== null ? searchResults : files;
 
   return (
     <div className="space-y-3">
+      {/* Hidden file input for upload */}
+      <input type="file" ref={uploadRef} className="hidden" onChange={handleFileSelected} />
+
       {/* Path bar */}
       <div className="bg-gray-800 rounded-lg border border-gray-700 p-3">
         <div className="flex gap-2">
@@ -193,6 +302,10 @@ export default function FileManager({ agentId }: FileManagerProps) {
           <button onClick={() => navigate(currentPath)} disabled={loading}
             className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded text-sm disabled:opacity-50">
             {loading ? '...' : 'Refresh'}
+          </button>
+          <button onClick={handleUploadClick} disabled={uploading}
+            className="px-3 py-2 bg-purple-700 hover:bg-purple-600 text-white rounded text-sm disabled:opacity-50">
+            {uploading ? 'Uploading...' : 'Upload'}
           </button>
           <button onClick={createDir} disabled={loading}
             className="px-3 py-2 bg-green-700 hover:bg-green-600 text-white rounded text-sm disabled:opacity-50">
@@ -216,6 +329,25 @@ export default function FileManager({ agentId }: FileManagerProps) {
             );
           })}
         </div>
+
+        {/* Search bar */}
+        <div className="flex gap-2 mt-2">
+          <form onSubmit={(e) => { e.preventDefault(); searchFiles(); }} className="flex-1 flex gap-2">
+            <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search files in current directory..."
+              className="flex-1 px-3 py-1.5 bg-gray-900 border border-gray-600 rounded text-white text-sm" />
+            <button type="submit" disabled={searching}
+              className="px-3 py-1.5 bg-yellow-700 hover:bg-yellow-600 text-white rounded text-xs disabled:opacity-50">
+              {searching ? '...' : 'Search'}
+            </button>
+            {searchResults !== null && (
+              <button onClick={() => { setSearchResults(null); setSearchQuery(''); }}
+                className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 text-white rounded text-xs">
+                Clear
+              </button>
+            )}
+          </form>
+        </div>
       </div>
 
       {message && (
@@ -229,10 +361,15 @@ export default function FileManager({ agentId }: FileManagerProps) {
         <div className="p-3 bg-red-900 text-red-300 rounded text-sm">{error}</div>
       )}
 
+      {searchResults !== null && (
+        <div className="px-3 py-1.5 bg-yellow-900/50 text-yellow-300 rounded text-sm">
+          Search results for "{searchQuery}": {searchResults.length} items found
+        </div>
+      )}
+
       <div className="flex gap-3" style={{ minHeight: '500px' }}>
         {/* File list */}
         <div className="flex-1 bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
-          {/* Column headers */}
           <div className="grid grid-cols-12 gap-2 px-4 py-2 bg-gray-750 border-b border-gray-700 text-xs text-gray-400 font-medium">
             <div className="col-span-6">Name</div>
             <div className="col-span-2 text-right">Size</div>
@@ -240,15 +377,17 @@ export default function FileManager({ agentId }: FileManagerProps) {
           </div>
 
           <div className="overflow-y-auto" style={{ maxHeight: '500px' }}>
-            {loading && files.length === 0 ? (
+            {loading && displayFiles.length === 0 ? (
               <div className="p-8 text-center text-gray-400">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-2"></div>
                 Loading...
               </div>
-            ) : files.length === 0 && !error ? (
-              <div className="p-8 text-center text-gray-500">Empty directory</div>
+            ) : displayFiles.length === 0 && !error ? (
+              <div className="p-8 text-center text-gray-500">
+                {searchResults !== null ? 'No files found' : 'Empty directory'}
+              </div>
             ) : (
-              files.map((item) => (
+              displayFiles.map((item) => (
                 <div key={item.path}
                   onClick={() => handleItemClick(item)}
                   className={`grid grid-cols-12 gap-2 px-4 py-2 cursor-pointer border-b border-gray-700/50 hover:bg-gray-700 transition text-sm ${
@@ -269,14 +408,13 @@ export default function FileManager({ agentId }: FileManagerProps) {
             )}
           </div>
 
-          {/* Status bar */}
           <div className="px-4 py-2 bg-gray-750 border-t border-gray-700 text-xs text-gray-500">
-            {files.length} items | {files.filter(f => f.is_dir).length} folders, {files.filter(f => !f.is_dir).length} files
-            {files.length > 0 && ` | ${formatSize(files.filter(f => !f.is_dir).reduce((s, f) => s + f.size, 0))} total`}
+            {displayFiles.length} items | {displayFiles.filter(f => f.is_dir).length} folders, {displayFiles.filter(f => !f.is_dir).length} files
+            {displayFiles.length > 0 && ` | ${formatSize(displayFiles.filter(f => !f.is_dir).reduce((s, f) => s + f.size, 0))} total`}
           </div>
         </div>
 
-        {/* Side panel — file preview / actions */}
+        {/* Side panel */}
         {selectedFile && (
           <div className="w-80 bg-gray-800 rounded-lg border border-gray-700 flex flex-col overflow-hidden">
             <div className="p-4 border-b border-gray-700">
@@ -305,10 +443,16 @@ export default function FileManager({ agentId }: FileManagerProps) {
             {/* Actions */}
             <div className="p-3 border-b border-gray-700 flex gap-2 flex-wrap">
               {!selectedFile.is_dir && (
-                <button onClick={() => readFile(selectedFile)}
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs">
-                  View
-                </button>
+                <>
+                  <button onClick={() => readFile(selectedFile)}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs">
+                    View
+                  </button>
+                  <button onClick={() => downloadFile(selectedFile)} disabled={downloading}
+                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded text-xs disabled:opacity-50">
+                    {downloading ? 'Downloading...' : 'Download'}
+                  </button>
+                </>
               )}
               <button onClick={() => { if (confirm('Delete ' + selectedFile.name + '?')) deleteFile(selectedFile); }}
                 className="px-3 py-1.5 bg-red-700 hover:bg-red-600 text-white rounded text-xs">

