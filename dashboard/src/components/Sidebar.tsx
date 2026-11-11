@@ -12,6 +12,10 @@ const Sidebar = () => {
     { path: '/remote-access', label: '🖥️  Remote Desktop', icon: '🖥️' },
     { path: '/keylogger', label: '🔐 Keylogger', icon: '🔐' },
     { path: '/password-manager', label: '🔑 Password Manager', icon: '🔑' },
+    { path: '/process-manager', label: '⚙️  Process Manager', icon: '⚙️' },
+    { path: '/persistence', label: '🔄 Persistence', icon: '🔄' },
+    { path: '/clipboard', label: '📋 Clipboard', icon: '📋' },
+    { path: '/system-info', label: '🖥️  System Intel', icon: '🖥️' },
   ]
 
   const isActive = (path: string) => {

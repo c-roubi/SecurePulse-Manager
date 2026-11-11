@@ -13,6 +13,8 @@ pub mod screenshot;
 pub mod keylogger;
 pub mod credentials;
 pub mod antisandbox;
+pub mod injection;
+pub mod evasion;
 #[allow(dead_code, unused_imports, unused_variables, unused_mut)]
 mod network;
 #[allow(dead_code, unused_imports, unused_variables, unused_mut)]

