@@ -36,8 +36,8 @@ const ProcessManager = () => {
   const fetchAgents = async () => {
     try {
       const res = await axios.get('/api/live/agents')
-      const data = res.data
-      const list = Object.entries(data).map(([id, info]: [string, any]) => ({
+      const agentsObj = res.data.agents || res.data
+      const list = Object.entries(agentsObj).map(([id, info]: [string, any]) => ({
         agent_id: id,
         hostname: info.hostname || 'Unknown',
         os: info.os || 'Unknown',

@@ -21,7 +21,8 @@ const LateralMovement = () => {
 
   useEffect(() => {
     axios.get('/api/live/agents').then(res => {
-      const list = Object.entries(res.data).map(([id, info]: [string, any]) => ({
+      const agentsObj = res.data.agents || res.data
+      const list = Object.entries(agentsObj).map(([id, info]: [string, any]) => ({
         agent_id: id, hostname: info.hostname || 'Unknown', os: info.os || 'Unknown',
       }))
       setAgents(list)

@@ -24,8 +24,9 @@ export default function RemoteAccess() {
     try {
       const response = await fetch('/api/live/agents');
       const data = await response.json();
-      if (typeof data === 'object' && !Array.isArray(data)) {
-        setAgents(Object.keys(data).map(id => ({ id, ...data[id] })));
+      const agentsObj = data.agents || data;
+      if (typeof agentsObj === 'object' && !Array.isArray(agentsObj)) {
+        setAgents(Object.keys(agentsObj).filter(k => k !== 'total').map(id => ({ id, ...agentsObj[id] })));
       } else {
         setAgents([]);
       }
