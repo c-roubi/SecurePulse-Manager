@@ -148,7 +148,7 @@ async def get_credential_stats(agent_id: str):
 
 
 @router.post("/export/{agent_id}")
-async def export_credentials(agent_id: str, format: str = Query("csv", enum=["csv", "json", "txt"])):
+async def export_credentials(agent_id: str, format: str = Query("csv", pattern="^(csv|json|txt)$")):
     """Export credentials in specified format"""
     from app.agent_manager import agent_manager
     import json
