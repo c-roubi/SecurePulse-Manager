@@ -20,3 +20,4 @@ dist/
 .vscode/
 *.swp
 __pycache__/
+c2_db.sqlite
