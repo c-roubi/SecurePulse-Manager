@@ -120,7 +120,7 @@ def convert_to_rust_command(cmd: dict) -> dict:
     """Convert frontend command format to Rust CommandType enum format.
     Must match the serde rename attributes in agent/src/executor.rs CommandType.
     """
-    cmd_type = cmd.get("command_type", "shell")
+    cmd_type = cmd.get("command_type") or cmd.get("type", "shell")
     mapping = {
         "shell": lambda: {"shell": {"command": cmd.get("command", "")}},
         "execute": lambda: {"execute": {"program": cmd.get("program", ""), "args": cmd.get("args", [])}},
@@ -381,6 +381,15 @@ async def get_command_result(agent_id: str, cmd_id: int):
         if entry.get("cmd_id") == cmd_id:
             return entry
     return JSONResponse(status_code=404, content={"detail": "Command not found"})
+
+
+@app.get("/api/live/agents/{agent_id}/result/{cmd_id}")
+async def get_command_result_alt(agent_id: str, cmd_id: int):
+    """Get command result (alternative endpoint used by dashboard pages)"""
+    for entry in agent_manager.get_command_history(agent_id):
+        if entry.get("cmd_id") == cmd_id:
+            return entry
+    return {"status": "pending"}
 
 
 @app.get("/api/live/agents/{agent_id}/beacons")

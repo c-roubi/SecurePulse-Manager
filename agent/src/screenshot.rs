@@ -20,24 +20,31 @@ impl ScreenCapture {
 
     /// Capture on Windows using built-in tools
     async fn capture_windows() -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-        // PowerShell script to capture screen
-        let script = r#"
-$bitmap = New-Object System.Drawing.Bitmap([System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width, [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height)
-$graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-$graphics.CopyFromScreen([System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Location, [System.Drawing.Point]::Empty, $bitmap.Size)
-$bitmap.Save("$env:TEMP\screenshot.jpg", [System.Drawing.Imaging.ImageFormat]::Jpeg)
-Write-Output "$env:TEMP\screenshot.jpg"
-"#;
+        let temp_path = format!("{}\\screenshot_{}.jpg",
+            std::env::var("TEMP").unwrap_or_else(|_| "C:\\Windows\\Temp".to_string()),
+            std::process::id());
+
+        let script = format!(
+            r#"Add-Type -AssemblyName System.Drawing; Add-Type -AssemblyName System.Windows.Forms; $b = New-Object System.Drawing.Bitmap([System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Width, [System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height); $g = [System.Drawing.Graphics]::FromImage($b); $g.CopyFromScreen([System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Location, [System.Drawing.Point]::Empty, $b.Size); $b.Save('{}', [System.Drawing.Imaging.ImageFormat]::Jpeg); $g.Dispose(); $b.Dispose()"#,
+            temp_path.replace('\\', "\\\\")
+        );
 
         let output = Command::new("powershell")
             .arg("-NoProfile")
+            .arg("-ExecutionPolicy")
+            .arg("Bypass")
             .arg("-Command")
-            .arg(script)
+            .arg(&script)
             .output()?;
 
-        let path = String::from_utf8(output.stdout)?.trim().to_string();
-        let img_data = std::fs::read(&path)?;
-        let _ = std::fs::remove_file(&path);
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("PowerShell screenshot failed: {}", stderr).into());
+        }
+
+        let img_data = std::fs::read(&temp_path)
+            .map_err(|e| format!("Failed to read screenshot file '{}': {}", temp_path, e))?;
+        let _ = std::fs::remove_file(&temp_path);
 
         Ok(img_data)
     }
